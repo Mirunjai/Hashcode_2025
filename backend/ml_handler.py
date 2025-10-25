@@ -23,7 +23,7 @@ class MLHandler:
             if not self.model_path.exists():
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
-            print("🧠 Loading ML model...")
+            print("Loading ML model...")
             model_payload = joblib.load(self.model_path)
             
             self.model = model_payload['model']
@@ -31,14 +31,14 @@ class MLHandler:
             self.feature_extractor = FeatureExtractor()
             self.is_loaded = True
             
-            print(f"✅ Model loaded successfully!")
-            print(f"📊 Features: {len(self.feature_names)}")
-            print(f"🤖 Model type: {type(self.model).__name__}")
+            print(f"Model loaded successfully!")
+            print(f"Features: {len(self.feature_names)}")
+            print(f"Model type: {type(self.model).__name__}")
             
             return True
             
         except Exception as e:
-            print(f"❌ Failed to load model: {e}")
+            print(f"Failed to load model: {e}")
             self.is_loaded = False
             return False
     
@@ -72,12 +72,13 @@ class MLHandler:
                 'action': action,
                 'confidence': round(probability, 3),
                 'url': url,
+                'features': features_dict, # Expose the calculated features for the scoring engine
                 'features_analyzed': len(features_dict),
                 'model_loaded': True
             }
             
         except Exception as e:
-            print(f"❌ Prediction error for {url}: {e}")
+            print(f"Prediction error for {url}: {e}")
             return self._error_response(str(e))
     
     def predict_batch(self, urls: list) -> list:
@@ -122,11 +123,11 @@ class MLHandler:
     def _classify_threat(self, score: int) -> tuple:
         """Convert threat score to verdict and action"""
         if score < 25:
-            return "🟢 SAFE", "Allow access"
+            return "SAFE", "Allow access"
         elif score < 65:
-            return "🟡 SUSPICIOUS", "Show warning"
+            return "SUSPICIOUS", "Show warning"
         else:
-            return "🔴 MALICIOUS", "Block access"
+            return "MALICIOUS", "Block access"
     
     def _error_response(self, error_msg: str) -> dict:
         """Standard error response"""
@@ -134,7 +135,7 @@ class MLHandler:
             'success': False,
             'error': error_msg,
             'threat_score': -1,
-            'verdict': '❌ ERROR',
+            'verdict': 'ERROR',
             'action': 'Review manually',
             'model_loaded': self.is_loaded
         }

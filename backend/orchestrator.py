@@ -1,22 +1,24 @@
-# orchestrator.py
-from feature_extractor import extract_network_features
-from ml_handler import get_ml_prediction
+# orchestrator.py (FINAL VERSION)
+from ml_handler import predict_url # Now we only need this!
 from content_analyzer import analyze_page_content
 from scoring_engine import calculate_final_score
-from typing import Optional
 
-def orchestrate_url_analysis(url: str, screenshot_base64: Optional[str] = None):
-    """The main workflow controller that manages the entire analysis process."""
-    print(f"\n--- [PM] Starting zero-day focused investigation for: {url} ---")
+def orchestrate_url_analysis(url: str, screenshot_base64: str = None):
+    """The main workflow controller that now gets everything from the ML handler."""
+    print(f"\n--- [Orchestrator] Starting analysis for: {url} ---")
     
-    network_features = extract_network_features(url)
+    # STEP 1: Get the complete ML prediction AND its features in one call.
+    ml_report = predict_url(url)
+    
+    if not ml_report.get('success', False):
+        return ml_report # Return error report immediately
+
+    # STEP 2: Get supplementary content analysis.
     content_features = analyze_page_content(url)
-    ml_probability = get_ml_prediction(network_features)
     
-    # (Optional OCR logic could be added here if a screenshot is provided)
-
-    final_report = calculate_final_score(network_features, content_features, ml_probability)
+    # STEP 3: Pass all collected intelligence to the final judge.
+    final_report = calculate_final_score(ml_report, content_features)
     final_report['url'] = url
-    print(f"--- [PM] Investigation complete. Verdict: {final_report['verdict']} ---")
+    print(f"--- [Orchestrator] Analysis complete. Final Verdict: {final_report.get('verdict')} ---")
     
     return final_report
