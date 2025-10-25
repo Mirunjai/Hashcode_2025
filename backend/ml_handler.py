@@ -122,9 +122,9 @@ class MLHandler:
     
     def _classify_threat(self, score: int) -> tuple:
         """Convert threat score to verdict and action"""
-        if score < 25:
+        if score < 30:
             return "SAFE", "Allow access"
-        elif score < 65:
+        elif score < 70:
             return "SUSPICIOUS", "Show warning"
         else:
             return "MALICIOUS", "Block access"
