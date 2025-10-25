@@ -20,7 +20,7 @@ const dashboardStyles = `
   }
 
   .dashboard-title {
-    font-size: 28px;
+    font-size: 32px;
     letter-spacing: 0.1em;
     font-weight: 800;
     background: linear-gradient(90deg, #67e8f9, #5eead4);
@@ -46,22 +46,7 @@ const dashboardStyles = `
     border-radius: 8px;
     color: #b6ecff;
     font-size: 14px;
-  }
-
-  .scan-button {
-    width: 100%;
-    padding: 12px;
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    color: white;
-    cursor: pointer;
-    background: linear-gradient(90deg, #0891b2, #0d9488);
-    margin-top: 8px;
-  }
-
-  .scan-button:hover {
-    background: linear-gradient(90deg, #0ea5e9, #14b8a6);
+    font-family: monospace;
   }
 
   .threat-gauge {
@@ -173,16 +158,42 @@ const dashboardStyles = `
 
   .threat-reason {
     background: rgba(239, 68, 68, 0.1);
-    padding: 12px;
-    border-radius: 8px;
-    border-left: 4px solid #ef4444;
-    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid #ef4444;
+    margin-top: 6px;
   }
 
-  .text-sm { font-size: 14px; }
-  .text-xs { font-size: 12px; }
+  .section-heading {
+    font-size: 18px;
+    font-weight: 700;
+    color: #67e8f9;
+    margin-bottom: 16px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .sub-heading {
+    font-size: 14px;
+    font-weight: 600;
+    color: #67e8f9;
+    margin-bottom: 12px;
+  }
+
+  .report-heading {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f87171;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  .text-sm { font-size: 16px; }
+  .text-xs { font-size: 14px; }
   .text-2xl { font-size: 24px; }
   .text-3xl { font-size: 32px; }
+  .text-4xl { font-size: 40px; }
   .font-bold { font-weight: bold; }
   .font-semibold { font-weight: 600; }
   .text-cyan-200 { color: #67e8f9; }
@@ -208,7 +219,6 @@ export default function PhishingDetectionPopup() {
   const [url, setUrl] = useState('https://paypal-secure-login.com');
   const [threatScore, setThreatScore] = useState(82);
   const [category, setCategory] = useState('MALICIOUS');
-  const [isScanning, setIsScanning] = useState(false);
   
   const [params, setParams] = useState([
     { key: 'URL Length Score', value: 70 },
@@ -254,41 +264,6 @@ export default function PhishingDetectionPopup() {
       document.head.removeChild(styleElement);
     };
   }, []);
-
-  function handleScan() {
-    setIsScanning(true);
-
-    // Simulate API call
-    setTimeout(() => {
-      const simulatedScore = Math.floor(Math.random() * 100);
-      setThreatScore(simulatedScore);
-      setCategory(simulatedScore > 70 ? 'MALICIOUS' : simulatedScore > 30 ? 'SUSPICIOUS' : 'SAFE');
-      
-      // Update metrics
-      setSystemMetrics(prev => ({
-        ...prev,
-        totalScans: prev.totalScans + 1,
-        blockedLinks: simulatedScore > 70 ? prev.blockedLinks + 1 : prev.blockedLinks
-      }));
-
-      // Add to history
-      const newHistoryItem = {
-        url: url.replace(/^https?:\/\//, ''),
-        date: new Date().toISOString().split('T')[0],
-        score: simulatedScore,
-        status: simulatedScore > 70 ? 'MALICIOUS' : simulatedScore > 30 ? 'SUSPICIOUS' : 'SAFE'
-      };
-      
-      setHistory(prev => [newHistoryItem, ...prev.slice(0, 19)]);
-      setIsScanning(false);
-    }, 1500);
-  }
-
-  function handleKeyPress(e) {
-    if (e.key === 'Enter') {
-      handleScan();
-    }
-  }
 
   // Helper function to get status color
   function getStatusColor(status) {
@@ -346,35 +321,24 @@ export default function PhishingDetectionPopup() {
       </header>
 
       <div className="grid-3-col">
-        {/* Left column: Scan + Gauge */}
+        {/* Left column: Real-time Threat Scan with Report */}
         <div className="dashboard-card">
+          <div className="section-heading">REAL-TIME THREAT SCAN</div>
+          
           <div className="mb-4">
-            <label className="text-xs font-semibold text-cyan-200 mb-2">
-              REAL-TIME THREAT SCAN
-            </label>
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={isScanning}
               className="scan-input"
               placeholder="Enter URL to scan..."
             />
           </div>
 
-          <button
-            onClick={handleScan}
-            disabled={isScanning}
-            className="scan-button"
-          >
-            {isScanning ? 'SCANNING...' : 'SCAN'}
-          </button>
-
           {/* Threat Gauge */}
-          <div className="flex-center mt-4">
+          <div className="flex-center">
             <div className="threat-gauge">
               <div className="text-center">
-                <div className="text-3xl font-bold" style={{ color: '#f0f9ff' }}>
+                <div className="text-4xl font-bold" style={{ color: '#f0f9ff' }}>
                   {threatScore}
                 </div>
                 <div className="text-sm font-semibold mt-2" style={{ color: getStatusColor(category) }}>
@@ -384,53 +348,51 @@ export default function PhishingDetectionPopup() {
             </div>
 
             <div style={{ flex: 1 }}>
-              <div className="text-xs text-cyan-200 font-semibold mb-3">
+              <div className="sub-heading mb-3">
                 THREAT RANGE
               </div>
               <div style={{
                 height: '8px',
                 borderRadius: '4px',
                 background: 'linear-gradient(90deg, #4ade80, #fbbf24, #f87171)',
-                marginBottom: '8px'
+                marginBottom: '12px'
               }} />
               <div className="text-xs text-cyan-400" style={{ lineHeight: '1.4' }}>
-                <div className="flex justify-between">
+                <div className="flex justify-between mb-1">
                   <span>0 — 30</span>
-                  <span style={{ color: '#4ade80' }}>SAFE</span>
+                  <span style={{ color: '#4ade80' }}>(Safe)</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between mb-1">
                   <span>31 — 70</span>
-                  <span style={{ color: '#fbbf24' }}>SUSPICIOUS</span>
+                  <span style={{ color: '#fbbf24' }}>(Suspicious)</span>
                 </div>
                 <div className="flex justify-between">
                   <span>71 — 100</span>
-                  <span style={{ color: '#f87171' }}>MALICIOUS</span>
+                  <span style={{ color: '#f87171' }}>(Malicious)</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Threat Report Block */}
+          {/* SCAN REPORT - Placed in the highlighted area */}
           <div className="threat-report">
-            <h4 className="text-sm font-semibold text-red-300 mb-3">
-              🚨 THREAT REPORT
-            </h4>
-            <div className="text-xs text-cyan-200 mb-2">
-              This URL was flagged as malicious because:
+            <div className="report-heading">SCAN REPORT</div>
+            <div className="text-xs text-cyan-200 mb-3">
+              This URL was classified as <span style={{ color: '#f87171', fontWeight: 'bold' }}>MALICIOUS</span> because:
             </div>
-            {threatReasons.map((reason, index) => (
-              <div key={index} className="threat-reason">
-                <div className="text-xs text-red-200">• {reason}</div>
-              </div>
-            ))}
+            <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+              {threatReasons.map((reason, index) => (
+                <div key={index} className="threat-reason">
+                  <div className="text-xs text-red-200">• {reason}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Middle column: parameter breakdown */}
+        {/* Middle column: Parameter Breakdown */}
         <div className="dashboard-card">
-          <h3 className="text-sm font-semibold mb-4 text-cyan-200 text-center">
-            DETAILED PARAMETER BREAKDOWN
-          </h3>
+          <div className="section-heading">DETAILED PARAMETER BREAKDOWN</div>
 
           <div className="max-h-80 overflow-y-auto pr-2">
             {params.map((param) => (
@@ -439,57 +401,69 @@ export default function PhishingDetectionPopup() {
           </div>
         </div>
 
-        {/* Right column: visualization + OCR logos + metrics */}
+        {/* Right column: Visualization + OCR + Metrics */}
         <div className="flex-col">
           {/* Visualization */}
           <div className="dashboard-card">
-            <h3 className="text-sm font-semibold mb-4 text-cyan-200">
-              VISUALIZATION & ANALYTICS
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+            <div className="section-heading">VISUALIZATION & ANALYTICS</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div style={{
-                height: '112px',
+                height: '120px',
                 backgroundColor: 'rgba(4, 50, 60, 0.3)',
                 borderRadius: '8px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#67e8f9',
-                fontSize: '12px',
-                width: '100%'
+                fontSize: '14px'
               }}>
                 Bar Chart
               </div>
               <div style={{
+                height: '120px',
+                backgroundColor: 'rgba(4, 50, 60, 0.3)',
+                borderRadius: '8px',
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                gap: '8px'
+                justifyContent: 'center',
+                color: '#67e8f9',
+                fontSize: '14px'
               }}>
-                <ThreatPieChart />
-                <div className="text-xs text-cyan-400 text-center">
-                  Threat Distribution
-                </div>
+                Pie Chart
               </div>
             </div>
           </div>
 
           {/* OCR Verification */}
           <div className="dashboard-card">
-            <h4 className="text-xs font-semibold mb-3 text-cyan-200">
-              OCR & VISUAL VERIFICATION
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="sub-heading">OCR & VISUAL VERIFICATION</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div style={{ padding: '12px', backgroundColor: 'rgba(4, 50, 60, 0.3)', borderRadius: '8px', textAlign: 'center' }}>
                 <div className="text-sm text-cyan-200 mb-2">Detected Logo</div>
-                <div style={{ backgroundColor: 'rgba(6, 136, 170, 0.2)', padding: '12px', borderRadius: '4px', fontFamily: 'monospace', color: '#b6ecff' }}>
+                <div style={{ 
+                  backgroundColor: 'rgba(6, 136, 170, 0.2)', 
+                  padding: '16px', 
+                  borderRadius: '4px', 
+                  fontFamily: 'monospace', 
+                  color: '#b6ecff',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}>
                   PayP
                 </div>
                 <div className="text-xs text-cyan-400 mt-2">Confidence: 52%</div>
               </div>
               <div style={{ padding: '12px', backgroundColor: 'rgba(4, 50, 60, 0.3)', borderRadius: '8px', textAlign: 'center' }}>
                 <div className="text-sm text-cyan-200 mb-2">Matched Logo</div>
-                <div style={{ backgroundColor: 'rgba(6, 136, 170, 0.2)', padding: '12px', borderRadius: '4px', fontFamily: 'monospace', color: '#b6ecff' }}>
+                <div style={{ 
+                  backgroundColor: 'rgba(6, 136, 170, 0.2)', 
+                  padding: '16px', 
+                  borderRadius: '4px', 
+                  fontFamily: 'monospace', 
+                  color: '#b6ecff',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}>
                   PayPal
                 </div>
                 <div className="text-xs text-cyan-400 mt-2">Confidence: 52%</div>
@@ -499,25 +473,23 @@ export default function PhishingDetectionPopup() {
 
           {/* System Metrics */}
           <div className="dashboard-card">
-            <h4 className="text-xs font-semibold mb-3 text-cyan-200">
-              SYSTEM METRICS
-            </h4>
+            <div className="sub-heading">SYSTEM METRICS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', textAlign: 'center' }}>
               <div className="metric-box">
                 <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.totalScans}</div>
-                <div className="text-xs text-cyan-300">Total Scans</div>
+                <div className="text-sm text-cyan-300">Total Scans</div>
               </div>
               <div className="metric-box">
                 <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.blockedLinks}</div>
-                <div className="text-xs text-cyan-300">Blocked Links</div>
+                <div className="text-sm text-cyan-300">Blocked Links</div>
               </div>
               <div className="metric-box">
                 <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.offlineDetections}</div>
-                <div className="text-xs text-cyan-300">Offline Detections</div>
+                <div className="text-sm text-cyan-300">Offline Detections</div>
               </div>
               <div className="metric-box">
                 <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.avgLatency}</div>
-                <div className="text-xs text-cyan-300">Avg Response</div>
+                <div className="text-sm text-cyan-300">Avg Response</div>
               </div>
             </div>
           </div>
@@ -526,9 +498,7 @@ export default function PhishingDetectionPopup() {
 
       {/* History Table */}
       <div className="dashboard-card">
-        <h3 className="text-sm font-semibold mb-4 text-cyan-200">
-          SCAN HISTORY
-        </h3>
+        <div className="section-heading" style={{ textAlign: 'left' }}>SCAN HISTORY</div>
         <div className="overflow-auto" style={{ maxHeight: '192px' }}>
           <table className="history-table">
             <thead>
@@ -542,13 +512,13 @@ export default function PhishingDetectionPopup() {
             <tbody>
               {history.map((h, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid rgba(6, 136, 170, 0.1)' }}>
-                  <td className="table-cell" style={{ fontFamily: 'monospace', fontSize: '11px' }}>{h.url}</td>
+                  <td className="table-cell" style={{ fontFamily: 'monospace', fontSize: '12px' }}>{h.url}</td>
                   <td className="table-cell">{h.date}</td>
                   <td className="table-cell">
                     <span style={{
-                      padding: '4px 8px',
+                      padding: '6px 10px',
                       borderRadius: '12px',
-                      fontSize: '11px',
+                      fontSize: '12px',
                       fontWeight: 'bold',
                       backgroundColor: `${getScoreColor(h.score)}20`,
                       color: getScoreColor(h.score)
@@ -558,9 +528,9 @@ export default function PhishingDetectionPopup() {
                   </td>
                   <td className="table-cell">
                     <span style={{
-                      padding: '4px 12px',
+                      padding: '6px 14px',
                       borderRadius: '12px',
-                      fontSize: '11px',
+                      fontSize: '12px',
                       fontWeight: '600',
                       backgroundColor: `${getStatusColor(h.status)}20`,
                       color: getStatusColor(h.status),
@@ -579,7 +549,7 @@ export default function PhishingDetectionPopup() {
       <footer style={{ 
         marginTop: '16px', 
         textAlign: 'center', 
-        fontSize: '12px', 
+        fontSize: '14px', 
         color: '#67e8f9',
         backgroundColor: 'rgba(6, 136, 170, 0.2)',
         padding: '12px',
@@ -587,7 +557,7 @@ export default function PhishingDetectionPopup() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>🛡️ Real-time Phishing Protection</span>
-          <span>ML-Powered Threat Detection</span>
+          <span>AI-Powered Threat Detection</span>
           <span>v2.1.0</span>
         </div>
       </footer>
