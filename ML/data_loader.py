@@ -1,76 +1,67 @@
-# data_loader.py
 import pandas as pd
 from pathlib import Path
 
-def get_balanced_dataset():
+def get_balanced_dataset(sample_size: int = None):
     """
-    Load a larger, more reliable dataset from a local CSV file.
-    This is much more stable than relying on a live URL.
+    Loads the balanced dataset from 'phishing_site_urls.csv'.
+    This version is robust: it checks data availability before sampling
+    to guarantee a balanced output and prevent crashes.
     """
     DATA_PATH = Path(__file__).parent / "data" / "phishing_site_urls.csv"
-
-    print("Loading reliable dataset from local CSV...")
+    print(f"Loading balanced dataset from: {DATA_PATH}")
 
     if not DATA_PATH.exists():
-        print(f"[ERROR] Dataset not found at {DATA_PATH}")
-        print("Please ensure 'phishing_site_urls.csv' is in a 'data' subfolder.")
-        # Return an empty DataFrame to prevent a crash
-        return pd.DataFrame({'url': [], 'label': []})
-
-    try:
-        df_phish_source = pd.read_csv(DATA_PATH)
-        
-        # Check if the CSV has the expected 'url' column from PhishTank
-        if 'url' not in df_phish_source.columns:
-            print("[FATAL ERROR] The provided CSV does not have a 'url' column. Please use the CSV from PhishTank.")
-            return pd.DataFrame()
-            
-        phishing_urls = df_phish_source['url'].tolist()
-        # Let's take a large sample for good training, but not the whole file if it's huge
-        phishing_urls = phishing_urls[:40] 
-        print(f"✅ Loaded {len(phishing_urls)} phishing URLs from local file.")
-        
-    except Exception as e:
-        print(f"[FATAL ERROR] Could not read or process the CSV file: {e}")
+        print(f"\n[FATAL ERROR] Required training file not found: {DATA_PATH}")
         return pd.DataFrame()
 
-    # --- Step 2: Create a list of Legitimate URLs ---
-    # Since the PhishTank file only contains bad URLs, we must provide our own good ones.
-    legitimate_urls = [
-        "https://google.com", "https://youtube.com", "https://facebook.com",
-        "https://amazon.com", "https://wikipedia.org", "https://reddit.com",
-        "https://instagram.com", "https://linkedin.com", "https://twitter.com",
-        "https://microsoft.com", "https://apple.com", "https://netflix.com",
-        "https://paypal.com", "https://github.com", "https://stackoverflow.com",
-        "https://ebay.com", "https://cnn.com", "https://bbc.com", "https://nytimes.com",
-        "https://chase.com", "https://bankofamerica.com", "https://wellsfargo.com",
-        "https://theverge.com", "https://techcrunch.com", "https://mit.edu"
-    ]
-    print(f"Generated a base list of {len(legitimate_urls)} legitimate URLs.")
+    try:
+        df = pd.read_csv(DATA_PATH)
+        df.rename(columns={'URL': 'url', 'Label': 'label'}, inplace=True)
+        df['label'] = df['label'].map({'bad': 1, 'good': 0})
+        df.dropna(subset=['url', 'label'], inplace=True)
+        df['label'] = df['label'].astype(int)
+        
+        # --- ROBUST BALANCING LOGIC ---
+        df_phish_full = df[df['label'] == 1]
+        df_legit_full = df[df['label'] == 0]
 
-    # --- Step 3: Balance the dataset ---
-    # We will create an equal number of legitimate and phishing URLs
-    num_phish = len(phishing_urls)
-    # This trick repeats the legit list until it's long enough, then slices it to the exact size needed.
-    balanced_legitimate_urls = (legitimate_urls * (num_phish // len(legitimate_urls) + 1))[:num_phish]
-    print(f"Balanced dataset will use {len(phishing_urls)} phishing and {len(balanced_legitimate_urls)} legitimate URLs.")
+        # Determine the maximum possible sample size based on the smallest class
+        smallest_class_size = min(len(df_phish_full), len(df_legit_full))
+        
+        if smallest_class_size == 0:
+            print("[FATAL ERROR] One class has zero samples. Cannot create a balanced dataset.")
+            return pd.DataFrame()
 
-    # --- Step 4: Assemble the final DataFrame ---
-    df_phishing = pd.DataFrame({'url': phishing_urls, 'label': 1})
-    df_legitimate = pd.DataFrame({'url': balanced_legitimate_urls, 'label': 0})
-    
-    # Combine, drop any duplicates, and shuffle
-    df = pd.concat([df_phishing, df_legitimate], ignore_index=True)
-    df.drop_duplicates(subset=['url'], inplace=True)
-    df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+        n_per_class = smallest_class_size
+        
+        # If a smaller sample is requested, use that, but cap it at what's available
+        if sample_size:
+            if sample_size // 2 > smallest_class_size:
+                print(f"[Warning] Requested {sample_size // 2} samples per class, but only {smallest_class_size} are available.")
+            n_per_class = min(sample_size // 2, smallest_class_size)
+            print(f"Using a smaller sample of {n_per_class * 2} total URLs for speed.")
+        
+        # Take the final sample from each class
+        df_phish_sample = df_phish_full.sample(n=n_per_class, random_state=42)
+        df_legit_sample = df_legit_full.sample(n=n_per_class, random_state=42)
+        
+        # Combine and shuffle
+        final_df = pd.concat([df_phish_sample, df_legit_sample], ignore_index=True)
+        final_df = final_df.sample(frac=1, random_state=42).reset_index(drop=True)
+        # --- END OF ROBUST LOGIC ---
 
-    print("\n--- Dataset Assembly Complete ---")
-    print(f"Final dataset size: {len(df)} URLs")
-    print(f"Final distribution: {df['label'].value_counts().to_dict()}")
-    return df
+        print("\n--- Dataset Assembly Complete ---")
+        print(f"Final dataset size: {len(final_df)} URLs")
+        print(f"Final distribution: {final_df['label'].value_counts().to_dict()}")
+        
+        return final_df
+
+    except Exception as e:
+        print(f"\n[FATAL ERROR] Failed to process the balanced CSV file: {e}")
+        return pd.DataFrame()
 
 if __name__ == "__main__":
-    dataset = get_balanced_dataset()
-    if not dataset.empty:
-        print("\nSample from final dataset:")
-        print(dataset.head())
+    print("--- Testing data_loader.py with a small sample (400) ---")
+    small_dataset = get_balanced_dataset(sample_size=400)
+    print("\n--- Testing data_loader.py with the full balanced dataset ---")
+    full_dataset = get_balanced_dataset()
