@@ -311,7 +311,7 @@ export default function PhishingDetectionPopup({ report }) {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <h1 className="dashboard-title">Live Test</h1>
+        <h1 className="dashboard-title"></h1>
       </header>
 
       <div className="grid-3-col">
