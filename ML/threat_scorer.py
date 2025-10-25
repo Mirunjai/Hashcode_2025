@@ -5,21 +5,21 @@ from feature_extractor import FeatureExtractor
 
 class AdvancedThreatScorer:
     def __init__(self, model_path='models/phishing_model.joblib'):
-        print("🧠 Loading ADVANCED ML model...")
+        print("Loading ADVANCED ML model...")
         try:
             model_payload = joblib.load(model_path)
             self.model = model_payload['model']
             self.feature_names = model_payload['feature_names']
             self.feature_extractor = FeatureExtractor()
-            print("✅ Advanced threat scorer ready!")
-            print(f"📊 Using {len(self.feature_names)} features")
+            print("Advanced threat scorer ready!")
+            print(f"Using {len(self.feature_names)} features")
         except Exception as e:
-            print(f"❌ Error loading model: {e}")
+            print(f"Error loading model: {e}")
             raise
     
     def analyze_url(self, url):
         """Analyze URL with advanced features"""
-        print(f"🔍 Analyzing: {url}")
+        print(f"Analyzing: {url}")
         
         try:
             # Extract features using your advanced extractor
