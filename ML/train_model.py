@@ -22,7 +22,7 @@ def train_with_whois_features(enable_whois_during_training=True):
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     print("Loading dataset...")
-    df = get_balanced_dataset(sample_size=1000)
+    df = get_balanced_dataset(sample_size=4000)
     if df.empty:
         print("Dataset is empty. Aborting training.")
         return
