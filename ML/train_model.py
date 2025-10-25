@@ -88,11 +88,12 @@ def train_with_advanced_features():
 
     print("Training RandomForestClassifier model...")
     model = RandomForestClassifier(
-        n_estimators=100,
+        n_estimators=150,           # Increased from 100
         random_state=42, 
         n_jobs=-1,
         max_depth=15,
-        min_samples_split=5
+        min_samples_split=5,
+        class_weight='balanced'     # Added this line
     )
     model.fit(X_train, y_train)
 
