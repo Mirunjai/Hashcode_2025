@@ -1,4 +1,3 @@
-# train_model.py
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -7,15 +6,15 @@ import joblib
 from pathlib import Path
 from tqdm import tqdm
 
-# Import your advanced feature extractor
+# NEW: Import the necessary libraries for parallel processing
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from feature_extractor import FeatureExtractor
 from data_loader import get_balanced_dataset
 
-tqdm.pandas()
-
 def train_with_advanced_features():
     """
-    Train model with the advanced feature extractor
+    Train model with a PARALLELIZED advanced feature extractor for maximum speed.
     """
     BASE_DIR = Path(__file__).parent
     MODEL_DIR = BASE_DIR / "models"
@@ -24,76 +23,64 @@ def train_with_advanced_features():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     print("Loading dataset...")
-    
-    try:
-        df = get_balanced_dataset()
-        print(f"Dataset loaded: {len(df)} URLs")
-    except Exception as e:
-        print(f"Error loading data: {e}")
+    df = get_balanced_dataset()
+    if df.empty:
+        print("Dataset is empty. Aborting training.")
         return
+    print(f"Dataset loaded: {len(df)} URLs")
 
-    print("Extracting ADVANCED features from URLs...")
+    print("Extracting ADVANCED features from URLs using multiple threads...")
     extractor = FeatureExtractor()
-    
-    # Extract features with progress bar
     features_list = []
-    failed_urls = 0
     
-    for url in tqdm(df['url'], desc="Extracting features"):
-        try:
-            features = extractor.extract_features(url)
-            features_list.append(features)
-        except Exception as e:
-            print(f"Failed to extract features from: {url} - {e}")
-            features_list.append({})
-            failed_urls += 1
+    # --- START OF PARALLEL FEATURE EXTRACTION BLOCK ---
+    # We create a ThreadPoolExecutor, which manages a pool of worker threads.
+    # `max_workers=16` means up to 16 URLs will be processed at the same time.
+    # This is ideal for network-bound tasks like WHOIS lookups.
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        # We submit a job to the executor for each URL. This returns a "future" object.
+        # We store these futures in a dictionary to link them back to the original URL if an error occurs.
+        futures = {executor.submit(extractor.extract_features, url): url for url in df['url']}
+        
+        # `as_completed` yields futures as they finish, allowing us to process results immediately.
+        # We wrap this in `tqdm` to create a live progress bar.
+        for future in tqdm(as_completed(futures), total=len(df['url']), desc="Extracting features"):
+            try:
+                # `future.result()` gets the return value (the features dict) from the function.
+                # If the function raised an exception, .result() will re-raise it here.
+                features = future.result()
+                features_list.append(features)
+            except Exception as e:
+                # If an error occurred in one of the threads, we can catch it.
+                url = futures[future]
+                print(f"\n[Warning] Failed to extract features from: {url} - Error: {e}")
+                # Append an empty dict as a placeholder for the failed URL.
+                features_list.append({})
+    # --- END OF PARALLEL FEATURE EXTRACTION BLOCK ---
     
-    if failed_urls > 0:
-        print(f"Failed to process {failed_urls} URLs")
+    print("\nConverting features to DataFrame...")
     
-    # Convert to DataFrame - handle dictionary features
-    print("Converting features to DataFrame...")
-    
-    # Get all possible feature keys
-    all_keys = set()
-    for features in features_list:
-        if features:  # Only if features is not empty
-            all_keys.update(features.keys())
-    
-    # Create DataFrame with all features
-    processed_features = []
-    for features in features_list:
-        if features:
-            row = {key: features.get(key, -1) for key in all_keys}
-        else:
-            row = {key: -1 for key in all_keys}  # Default values for failed extraction
-        processed_features.append(row)
-    
-    X = pd.DataFrame(processed_features)
+    X = pd.DataFrame(features_list)
     y = df['label'].values
     
     print(f"Feature extraction complete:")
     print(f"   Samples: {X.shape[0]}")
     print(f"   Features: {X.shape[1]}")
-    print(f"   Feature names: {list(X.columns)}")
     
-    # Handle any infinite or NaN values
-    X = X.replace([float('inf'), float('-inf')], 0)
-    X = X.fillna(-1)
+    X = X.replace([float('inf'), float('-inf')], 0).fillna(-1)
     
     print("Splitting data into training and testing sets...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    print("Training RandomForestClassifier model...")
+    print("Training RandomForestClassifier model (using faster settings)...")
     model = RandomForestClassifier(
-        n_estimators=150,           # Increased from 100
+        n_estimators=150,
+        max_depth=15,
         random_state=42, 
         n_jobs=-1,
-        max_depth=15,
-        min_samples_split=5,
-        class_weight='balanced'     # Added this line
+        class_weight='balanced'
     )
     model.fit(X_train, y_train)
 
@@ -106,23 +93,14 @@ def train_with_advanced_features():
     print("Classification Report:")
     print(report)
 
-    # Save model with feature information
     print(f"Saving model to {MODEL_PATH}...")
     try:
         model_payload = {
             'model': model,
-            'feature_names': X.columns.tolist(),
-            'feature_importances': dict(zip(X.columns, model.feature_importances_))
+            'feature_names': X.columns.tolist()
         }
         joblib.dump(model_payload, MODEL_PATH)
         print("Model saved successfully!")
-        
-        # Show top features
-        print("\nTop 10 Most Important Features:")
-        feature_imp = sorted(model_payload['feature_importances'].items(), 
-                           key=lambda x: x[1], reverse=True)
-        for name, imp in feature_imp[:10]:
-            print(f"   {name}: {imp:.4f}")
             
     except Exception as e:
         print(f"Error saving model: {e}")
