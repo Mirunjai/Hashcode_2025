@@ -2,15 +2,21 @@
 import joblib
 import pandas as pd
 from pathlib import Path
-from feature_extractor import FeatureExtractor  # Use the fast one!
+from feature_extractor import FeatureExtractor  # Make sure this import is correct
 
 class MLHandler:
-    def __init__(self, model_path: str = "ML/models/phishing_model.joblib"):
+    """
+    Main ML interface for the phishing detection system.
+    Handles model loading, prediction, and management.
+    """
+    
+    def __init__(self, model_path: str = "ML/models/phishing_model.joblib", enable_whois=True):
         self.model_path = Path(model_path)
         self.model = None
         self.feature_extractor = None
         self.feature_names = None
         self.is_loaded = False
+        self.enable_whois = enable_whois  # Add this parameter
         
     def load_model(self):
         """Load the trained model and feature extractor"""
@@ -23,12 +29,14 @@ class MLHandler:
             
             self.model = model_payload['model']
             self.feature_names = model_payload.get('feature_names', [])
-            self.feature_extractor = FeatureExtractor()  # Use fast extractor
+            # Use the WHOIS-enabled extractor
+            self.feature_extractor = FeatureExtractor(enable_whois=self.enable_whois)
             self.is_loaded = True
             
             print(f"Model loaded successfully!")
             print(f"Features: {len(self.feature_names)}")
             print(f"Model type: {type(self.model).__name__}")
+            print(f"WHOIS enabled: {self.enable_whois}")
             
             return True
             

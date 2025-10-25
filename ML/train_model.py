@@ -1,19 +1,19 @@
-# train_model_domain_aware.py
+# train_model_with_whois.py
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
 from pathlib import Path
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from feature_extractor import FeatureExtractor
 from data_loader import get_balanced_dataset
 
-def train_domain_aware_model():
+def train_with_whois_features(enable_whois_during_training=True):
     """
-    Train model with domain-aware features and sample weighting
+    Train model with optional WHOIS features
     """
     BASE_DIR = Path(__file__).parent
     MODEL_DIR = BASE_DIR / "models"
@@ -22,32 +22,30 @@ def train_domain_aware_model():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
     print("Loading dataset...")
-    df = get_balanced_dataset(sample_size=3000)  # Use more data
+    df = get_balanced_dataset(sample_size=1000)
     if df.empty:
         print("Dataset is empty. Aborting training.")
         return
     print(f"Dataset loaded: {len(df)} URLs")
-
-    print("Extracting DOMAIN-AWARE features...")
-    extractor = FeatureExtractor()
+    
+    print(f"Extracting features with WHOIS = {enable_whois_during_training}...")
+    extractor = FeatureExtractor(enable_whois=enable_whois_during_training)
     features_list = []
     
-    # Extract features and track trusted domains
-    trusted_urls = []
-    for url in tqdm(df['url'], desc="Extracting features"):
-        try:
-            features = extractor.extract_features(url)
-            features_list.append(features)
-            
-            # Track if this is a trusted domain
-            if features.get('is_trusted_domain', 0) == 1:
-                trusted_urls.append(True)
-            else:
-                trusted_urls.append(False)
-        except Exception as e:
-            print(f"\n[Warning] Failed to extract features: {e}")
-            features_list.append({})
-            trusted_urls.append(False)
+    # Use ThreadPoolExecutor but with limited workers for WHOIS to avoid rate limiting
+    max_workers = 4 if enable_whois_during_training else 16
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(extractor.extract_features, url): url for url in df['url']}
+        
+        for future in tqdm(as_completed(futures), total=len(df['url']), desc="Extracting features"):
+            try:
+                features = future.result()
+                features_list.append(features)
+            except Exception as e:
+                url = futures[future]
+                print(f"\n[Warning] Failed to extract features from: {url} - Error: {e}")
+                features_list.append({})
     
     print("\nConverting features to DataFrame...")
     X = pd.DataFrame(features_list)
@@ -56,38 +54,27 @@ def train_domain_aware_model():
     print(f"Feature extraction complete:")
     print(f"   Samples: {X.shape[0]}")
     print(f"   Features: {X.shape[1]}")
-    print(f"   Trusted domains found: {sum(trusted_urls)}")
     
     # Clean the data
-    X = X.replace([float('inf'), float('-inf')], 0).fillna(0)
+    X = X.replace([float('inf'), float('-inf')], 0).fillna(-1)
     
     print("Splitting data into training and testing sets...")
-    X_train, X_test, y_train, y_test, trusted_train, trusted_test = train_test_split(
-        X, y, trusted_urls, test_size=0.2, random_state=42, stratify=y
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # CREATE SAMPLE WEIGHTS: Give higher weight to trusted domains that are legitimate
-    sample_weights = np.ones(len(X_train))
-    for i, (trusted, label) in enumerate(zip(trusted_train, y_train)):
-        if trusted and label == 0:  # Trusted + legitimate
-            sample_weights[i] = 2.0  # Higher weight
-        elif not trusted and label == 1:  # Untrusted + phishing
-            sample_weights[i] = 1.5  # Medium weight
-    
-    print("Training Domain-Aware RandomForest...")
+    print("Training RandomForestClassifier...")
     model = RandomForestClassifier(
-        n_estimators=200,
+        n_estimators=150,
         max_depth=15,
-        min_samples_split=10,
-        min_samples_leaf=5,
+        min_samples_split=8,
+        min_samples_leaf=4,
         max_features='sqrt',
         random_state=42, 
         n_jobs=-1,
         class_weight='balanced'
     )
-    
-    # Train with sample weights
-    model.fit(X_train, y_train, sample_weight=sample_weights)
+    model.fit(X_train, y_train)
 
     print("Evaluating model...")
     y_pred = model.predict(X_test)
@@ -98,10 +85,14 @@ def train_domain_aware_model():
     print("Classification Report:")
     print(report)
     
-    # Test trusted domain performance
-    trusted_test = np.array(trusted_test)
-    trusted_accuracy = accuracy_score(y_test[trusted_test], y_pred[trusted_test])
-    print(f"Trusted domains accuracy: {trusted_accuracy:.4f}")
+    # Show WHOIS feature statistics if enabled
+    if enable_whois_during_training:
+        whois_failures = X['whois_lookup_failed'].sum()
+        whois_success = len(X) - whois_failures
+        print(f"\nWHOIS Statistics:")
+        print(f"   Successful lookups: {whois_success}")
+        print(f"   Failed lookups: {whois_failures}")
+        print(f"   Success rate: {whois_success/len(X)*100:.1f}%")
 
     print(f"Saving model to {MODEL_PATH}...")
     try:
@@ -109,7 +100,7 @@ def train_domain_aware_model():
             'model': model,
             'feature_names': X.columns.tolist(),
             'training_accuracy': accuracy,
-            'extractor_type': 'DomainAwareFeatureExtractor'
+            'whois_enabled_during_training': enable_whois_during_training
         }
         joblib.dump(model_payload, MODEL_PATH)
         print("Model saved successfully!")
@@ -118,4 +109,10 @@ def train_domain_aware_model():
         print(f"Error saving model: {e}")
 
 if __name__ == "__main__":
-    train_domain_aware_model()
+    # Train without WHOIS first (faster, more reliable)
+    print("=== TRAINING WITHOUT WHOIS (Recommended) ===")
+    train_with_whois_features(enable_whois_during_training=True)
+    
+    # Uncomment to train with WHOIS (slower, might have failures)
+    # print("\n=== TRAINING WITH WHOIS (Experimental) ===")
+    # train_with_whois_features(enable_whois_during_training=True)
