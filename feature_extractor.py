@@ -26,7 +26,7 @@ class FeatureExtractor:
         # 3. Count Hyphens in Hostname
         features['hostname_hyphens'] = hostname.count('-')
         # 4. Check for IP Address in Hostname
-        ip_pattern = r'^\d{1,3}(\.\d{1,3}){3}$'
+        ip_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
         features['uses_ip_address'] = 1 if re.match(ip_pattern, hostname) else 0
         # 5. Count '@' symbol in the URL
         features['count_at_symbol'] = url.count('@')
