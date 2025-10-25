@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "PhishEye Threat Detector",
+  "version": "1.0.0",
+  "description": "Analyzes URLs in real-time for zero-day phishing threats.",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/"
+  ],
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "vite.svg",
+      "48": "vite.svg",
+      "128": "vite.svg"
+    }
+  },
+  "icons": {
+    "16": "vite.svg",
+    "48": "vite.svg",
+    "128": "vite.svg"
+  }
+}
