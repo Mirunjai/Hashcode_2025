@@ -190,4 +190,4 @@ def init_ml_handler(model_path: str = None):
 
 def predict_url(url: str):
     """Convenience function for single URL prediction"""
-    return ml_handler.predict_url(url)
+    return ml_handler.predict_url(url) 
