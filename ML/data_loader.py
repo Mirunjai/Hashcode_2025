@@ -1,65 +1,76 @@
 # data_loader.py
 import pandas as pd
-import requests
+from pathlib import Path
 
-def load_phishing_data():
-    """Simple data loader - tries real data, falls back to synthetic"""
-    print("Loading phishing data...")
-    
-    # Try to get real data first
+def get_balanced_dataset():
+    """
+    Load a larger, more reliable dataset from a local CSV file.
+    This is much more stable than relying on a live URL.
+    """
+    DATA_PATH = Path(__file__).parent / "data" / "phishing_site_urls.csv"
+
+    print("Loading reliable dataset from local CSV...")
+
+    if not DATA_PATH.exists():
+        print(f"[ERROR] Dataset not found at {DATA_PATH}")
+        print("Please ensure 'phishing_site_urls.csv' is in a 'data' subfolder.")
+        # Return an empty DataFrame to prevent a crash
+        return pd.DataFrame({'url': [], 'label': []})
+
     try:
-        url = "http://data.phishtank.com/data/online-valid.csv"
-        df = pd.read_csv(url)
-        phishing_urls = df['url'].tolist()[:500]  # Take first 500
-        print(f"Loaded {len(phishing_urls)} real phishing URLs")
-    except:
-        print("Using synthetic data")
-        phishing_urls = [
-            "http://verify-paypal-account.com", "https://apple-id-secure-login.net",
-            "http://microsoft-online-security.com", "http://netflix-billing-update.org",
-            "http://amazon-account-verification.com", "http://bankofamerica-secure-login.net",
-            "http://google-drive-security-alert.com", "http://facebook-login-confirm.com",
-            "http://whatsapp-verification-code.com", "http://instagram-account-recovery.com",
-            "http://192.168.1.1/login.php", "http://secure-login-bank.com",
-            "http://update-your-password.com", "http://account-verification-required.com"
-        ] * 35  # Scale to ~500 URLs
-    
-    return phishing_urls
+        df_phish_source = pd.read_csv(DATA_PATH)
+        
+        # Check if the CSV has the expected 'url' column from PhishTank
+        if 'url' not in df_phish_source.columns:
+            print("[FATAL ERROR] The provided CSV does not have a 'url' column. Please use the CSV from PhishTank.")
+            return pd.DataFrame()
+            
+        phishing_urls = df_phish_source['url'].tolist()
+        # Let's take a large sample for good training, but not the whole file if it's huge
+        phishing_urls = phishing_urls[:40] 
+        print(f"✅ Loaded {len(phishing_urls)} phishing URLs from local file.")
+        
+    except Exception as e:
+        print(f"[FATAL ERROR] Could not read or process the CSV file: {e}")
+        return pd.DataFrame()
 
-def load_legitimate_data():
-    """Load legitimate URLs"""
+    # --- Step 2: Create a list of Legitimate URLs ---
+    # Since the PhishTank file only contains bad URLs, we must provide our own good ones.
     legitimate_urls = [
-        "https://google.com", "https://youtube.com", "https://facebook.com", 
+        "https://google.com", "https://youtube.com", "https://facebook.com",
         "https://amazon.com", "https://wikipedia.org", "https://reddit.com",
         "https://instagram.com", "https://linkedin.com", "https://twitter.com",
         "https://microsoft.com", "https://apple.com", "https://netflix.com",
         "https://paypal.com", "https://github.com", "https://stackoverflow.com",
         "https://ebay.com", "https://cnn.com", "https://bbc.com", "https://nytimes.com",
-        "https://chase.com", "https://bankofamerica.com", "https://wellsfargo.com"
-    ] * 25  # Scale to ~500 URLs
-    
-    print(f"Loaded {len(legitimate_urls)} legitimate URLs")
-    return legitimate_urls
+        "https://chase.com", "https://bankofamerica.com", "https://wellsfargo.com",
+        "https://theverge.com", "https://techcrunch.com", "https://mit.edu"
+    ]
+    print(f"Generated a base list of {len(legitimate_urls)} legitimate URLs.")
 
-def get_balanced_dataset():
-    """Return balanced dataset for training"""
-    phishing_urls = load_phishing_data()
-    legitimate_urls = load_legitimate_data()
-    
-    # Create DataFrame
+    # --- Step 3: Balance the dataset ---
+    # We will create an equal number of legitimate and phishing URLs
+    num_phish = len(phishing_urls)
+    # This trick repeats the legit list until it's long enough, then slices it to the exact size needed.
+    balanced_legitimate_urls = (legitimate_urls * (num_phish // len(legitimate_urls) + 1))[:num_phish]
+    print(f"Balanced dataset will use {len(phishing_urls)} phishing and {len(balanced_legitimate_urls)} legitimate URLs.")
+
+    # --- Step 4: Assemble the final DataFrame ---
     df_phishing = pd.DataFrame({'url': phishing_urls, 'label': 1})
-    df_legitimate = pd.DataFrame({'url': legitimate_urls, 'label': 0})
+    df_legitimate = pd.DataFrame({'url': balanced_legitimate_urls, 'label': 0})
     
-    # Combine and shuffle
+    # Combine, drop any duplicates, and shuffle
     df = pd.concat([df_phishing, df_legitimate], ignore_index=True)
+    df.drop_duplicates(subset=['url'], inplace=True)
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
-    
-    print(f"Final dataset: {len(df_phishing)} phishing, {len(df_legitimate)} legitimate")
+
+    print("\n--- Dataset Assembly Complete ---")
+    print(f"Final dataset size: {len(df)} URLs")
+    print(f"Final distribution: {df['label'].value_counts().to_dict()}")
     return df
 
-# Test it
 if __name__ == "__main__":
-    df = get_balanced_dataset()
-    print(f"\Sample URLs:")
-    print("Phishing:", df[df['label'] == 1]['url'].iloc[0])
-    print("Legitimate:", df[df['label'] == 0]['url'].iloc[0])
+    dataset = get_balanced_dataset()
+    if not dataset.empty:
+        print("\nSample from final dataset:")
+        print(dataset.head())
