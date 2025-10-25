@@ -49,10 +49,10 @@ class AdvancedThreatScorer:
                 verdict = "🟢 SAFE"
                 action = "Allow access"
             elif threat_score < 65:
-                verdict = "🟡 SUSPICIOUS" 
+                verdict = "SUSPICIOUS" 
                 action = "Show warning"
             else:
-                verdict = "🔴 MALICIOUS"
+                verdict = "MALICIOUS"
                 action = "BLOCK ACCESS"
             
             # Get top contributing features
@@ -70,10 +70,10 @@ class AdvancedThreatScorer:
             }
             
         except Exception as e:
-            print(f"❌ Error analyzing URL: {e}")
+            print(f"Error analyzing URL: {e}")
             return {
                 'threat_score': -1,
-                'verdict': "❌ ERROR",
+                'verdict': "ERROR",
                 'action': "Review manually",
                 'confidence': 0,
                 'error': str(e)
@@ -106,21 +106,21 @@ def demo_advanced():
     ]
     
     print("\n" + "="*60)
-    print("🎯 ADVANCED PHISHING DETECTION DEMO")
+    print("ADVANCED PHISHING DETECTION DEMO")
     print("="*60)
     
     for url in test_urls:
         result = scorer.analyze_url(url)
-        print(f"\n📊 URL: {url}")
-        print(f"🎯 Threat Score: {result['threat_score']}/100")
-        print(f"📢 Verdict: {result['verdict']}")
-        print(f"⚡ Action: {result['action']}")
-        print(f"🤖 Confidence: {result['confidence']:.1%}")
+        print(f"\nURL: {url}")
+        print(f"Threat Score: {result['threat_score']}/100")
+        print(f"Verdict: {result['verdict']}")
+        print(f"Action: {result['action']}")
+        print(f"Confidence: {result['confidence']:.1%}")
         
         if 'top_contributors' in result:
-            print(f"🔍 Top Contributors: {result['top_contributors'][:2]}")
+            print(f"Top Contributors: {result['top_contributors'][:2]}")
         if 'domain_age' in result and result['domain_age'] != -1:
-            print(f"📅 Domain Age: {result['domain_age']} days")
+            print(f"Domain Age: {result['domain_age']} days")
         
         print("-" * 40)
 

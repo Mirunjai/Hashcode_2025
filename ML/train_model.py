@@ -23,16 +23,16 @@ def train_with_advanced_features():
     
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     
-    print("📥 Loading dataset...")
+    print("Loading dataset...")
     
     try:
         df = get_balanced_dataset()
-        print(f"✅ Dataset loaded: {len(df)} URLs")
+        print(f"Dataset loaded: {len(df)} URLs")
     except Exception as e:
-        print(f"❌ Error loading data: {e}")
+        print(f"Error loading data: {e}")
         return
 
-    print("🔧 Extracting ADVANCED features from URLs...")
+    print("Extracting ADVANCED features from URLs...")
     extractor = FeatureExtractor()
     
     # Extract features with progress bar
@@ -44,15 +44,15 @@ def train_with_advanced_features():
             features = extractor.extract_features(url)
             features_list.append(features)
         except Exception as e:
-            print(f"❌ Failed to extract features from: {url} - {e}")
+            print(f"Failed to extract features from: {url} - {e}")
             features_list.append({})
             failed_urls += 1
     
     if failed_urls > 0:
-        print(f"⚠️  Failed to process {failed_urls} URLs")
+        print(f"Failed to process {failed_urls} URLs")
     
     # Convert to DataFrame - handle dictionary features
-    print("📊 Converting features to DataFrame...")
+    print("Converting features to DataFrame...")
     
     # Get all possible feature keys
     all_keys = set()
@@ -72,7 +72,7 @@ def train_with_advanced_features():
     X = pd.DataFrame(processed_features)
     y = df['label'].values
     
-    print(f"✅ Feature extraction complete:")
+    print(f"Feature extraction complete:")
     print(f"   Samples: {X.shape[0]}")
     print(f"   Features: {X.shape[1]}")
     print(f"   Feature names: {list(X.columns)}")
@@ -81,12 +81,12 @@ def train_with_advanced_features():
     X = X.replace([float('inf'), float('-inf')], 0)
     X = X.fillna(-1)
     
-    print("🎯 Splitting data into training and testing sets...")
+    print("Splitting data into training and testing sets...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    print("🧠 Training RandomForestClassifier model...")
+    print("Training RandomForestClassifier model...")
     model = RandomForestClassifier(
         n_estimators=100,
         random_state=42, 
@@ -96,17 +96,17 @@ def train_with_advanced_features():
     )
     model.fit(X_train, y_train)
 
-    print("📈 Evaluating model...")
+    print("Evaluating model...")
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
     report = classification_report(y_test, y_pred, target_names=['Legitimate', 'Phishing'])
 
-    print(f"\n✅ Model Accuracy: {accuracy:.4f}")
-    print("📋 Classification Report:")
+    print(f"\nModel Accuracy: {accuracy:.4f}")
+    print("Classification Report:")
     print(report)
 
     # Save model with feature information
-    print(f"💾 Saving model to {MODEL_PATH}...")
+    print(f"Saving model to {MODEL_PATH}...")
     try:
         model_payload = {
             'model': model,
@@ -114,17 +114,17 @@ def train_with_advanced_features():
             'feature_importances': dict(zip(X.columns, model.feature_importances_))
         }
         joblib.dump(model_payload, MODEL_PATH)
-        print("🎉 Model saved successfully!")
+        print("Model saved successfully!")
         
         # Show top features
-        print("\n🔍 Top 10 Most Important Features:")
+        print("\nTop 10 Most Important Features:")
         feature_imp = sorted(model_payload['feature_importances'].items(), 
                            key=lambda x: x[1], reverse=True)
         for name, imp in feature_imp[:10]:
             print(f"   {name}: {imp:.4f}")
             
     except Exception as e:
-        print(f"❌ Error saving model: {e}")
+        print(f"Error saving model: {e}")
 
 if __name__ == "__main__":
     train_with_advanced_features()

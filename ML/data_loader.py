@@ -4,16 +4,16 @@ import requests
 
 def load_phishing_data():
     """Simple data loader - tries real data, falls back to synthetic"""
-    print("📥 Loading phishing data...")
+    print("Loading phishing data...")
     
     # Try to get real data first
     try:
         url = "http://data.phishtank.com/data/online-valid.csv"
         df = pd.read_csv(url)
         phishing_urls = df['url'].tolist()[:500]  # Take first 500
-        print(f"✅ Loaded {len(phishing_urls)} real phishing URLs")
+        print(f"Loaded {len(phishing_urls)} real phishing URLs")
     except:
-        print("⚠️  Using synthetic data")
+        print("Using synthetic data")
         phishing_urls = [
             "http://verify-paypal-account.com", "https://apple-id-secure-login.net",
             "http://microsoft-online-security.com", "http://netflix-billing-update.org",
@@ -54,12 +54,12 @@ def get_balanced_dataset():
     df = pd.concat([df_phishing, df_legitimate], ignore_index=True)
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
     
-    print(f"🎯 Final dataset: {len(df_phishing)} phishing, {len(df_legitimate)} legitimate")
+    print(f"Final dataset: {len(df_phishing)} phishing, {len(df_legitimate)} legitimate")
     return df
 
 # Test it
 if __name__ == "__main__":
     df = get_balanced_dataset()
-    print(f"\n📊 Sample URLs:")
+    print(f"\Sample URLs:")
     print("Phishing:", df[df['label'] == 1]['url'].iloc[0])
     print("Legitimate:", df[df['label'] == 0]['url'].iloc[0])
