@@ -4,6 +4,7 @@ import re
 import json
 import whois
 from datetime import datetime, timezone  # <--- MODIFIED THIS LINE
+import dns.resolver 
 
 class FeatureExtractor:
     """
@@ -12,6 +13,17 @@ class FeatureExtractor:
     """
     def __init__(self):
         pass
+
+    def get_dns_features(self, hostname):
+        features = {}
+        try:
+            # Check for Mail Exchanger (MX) records
+            dns.resolver.resolve(hostname, 'MX')
+            features['has_mx_record'] = 1
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # No MX record found
+            features['has_mx_record'] = 0
+        return features
 
     def get_lexical_features(self, url, hostname):
         """
@@ -104,7 +116,7 @@ class FeatureExtractor:
         lexical_features = self.get_lexical_features(url, hostname)
         whois_features = self.get_whois_features(hostname)
         all_features = {**lexical_features, **whois_features}
-        
+        dns_features = self.get_dns_features(hostname)
         return all_features
 
 # This part is for testing your code directly
