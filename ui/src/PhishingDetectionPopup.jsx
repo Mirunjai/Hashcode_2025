@@ -1,316 +1,259 @@
 import React, { useEffect, useState } from 'react';
 
 const dashboardStyles = `
-  .dashboard-container {
-    width: 900px;
-    max-width: 100%;
-    margin: 0 auto;
-    padding: 20px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #b6ecff;
-    background: linear-gradient(135deg, #041018 0%, #06222e 100%);
-    border-radius: 16px;
-    border: 1px solid rgba(6, 136, 170, 0.3);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  }
+.dashboard-container {
+width: 900px;
+max-width: 100%;
+margin: 0 auto;
+padding: 20px;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+color: #b6ecff;
+background: linear-gradient(135deg, #041018 0%, #06222e 100%);
+border-radius: 16px;
+border: 1px solid rgba(6, 136, 170, 0.3);
+box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
 
-  .dashboard-header {
-    text-align: center;
-    margin-bottom: 24px;
-  }
+.dashboard-header {
+text-align: center;
+margin-bottom: 24px;
+}
 
-  .dashboard-title {
-    font-size: 32px;
-    letter-spacing: 0.1em;
-    font-weight: 800;
-    background: linear-gradient(90deg, #67e8f9, #5eead4);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
+.dashboard-title {
+font-size: 32px;
+letter-spacing: 0.1em;
+font-weight: 800;
+background: linear-gradient(90deg, #67e8f9, #5eead4);
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
 
-  .dashboard-card {
-    background: linear-gradient(to bottom, rgba(6, 136, 170, 0.1), rgba(6, 136, 170, 0.05));
-    padding: 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(6, 136, 170, 0.3);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-  }
+.dashboard-card {
+background: linear-gradient(to bottom, rgba(6, 136, 170, 0.1), rgba(6, 136, 170, 0.05));
+padding: 16px;
+border-radius: 12px;
+border: 1px solid rgba(6, 136, 170, 0.3);
+box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
 
-  .scan-input {
-    width: 100%;
-    margin-top: 8px;
-    padding: 12px;
-    background-color: rgba(6, 136, 170, 0.2);
-    border: 1px solid rgba(6, 136, 170, 0.3);
-    border-radius: 8px;
-    color: #b6ecff;
-    font-size: 14px;
-    font-family: monospace;
-  }
+.scan-input {
+width: 100%;
+margin-top: 8px;
+padding: 12px;
+background-color: rgba(6, 136, 170, 0.2);
+border: 1px solid rgba(6, 136, 170, 0.3);
+border-radius: 8px;
+color: #b6ecff;
+font-size: 14px;
+font-family: monospace;
+}
 
-  .threat-gauge {
-    position: relative;
-    width: 160px;
-    height: 160px;
-    border-radius: 50%;
-    border: 8px solid rgba(8, 145, 178, 0.3);
-    background: linear-gradient(to bottom, rgba(8, 145, 178, 0.2), transparent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+.threat-gauge {
+position: relative;
+width: 160px;
+height: 160px;
+border-radius: 50%;
+border: 8px solid rgba(8, 145, 178, 0.3);
+background: linear-gradient(to bottom, rgba(8, 145, 178, 0.2), transparent);
+display: flex;
+align-items: center;
+justify-content: center;
+}
 
-  .param-bar {
-    width: 100%;
-    height: 8px;
-    border-radius: 4px;
-    background-color: rgba(8, 145, 178, 0.3);
-    overflow: hidden;
-    margin-top: 4px;
-  }
+.param-bar {
+width: 100%;
+height: 8px;
+border-radius: 4px;
+background-color: rgba(8, 145, 178, 0.3);
+overflow: hidden;
+margin-top: 4px;
+}
 
-  .param-fill {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.5s ease;
-  }
+.param-fill {
+height: 100%;
+border-radius: 4px;
+transition: width 0.5s ease;
+}
 
-  .metric-box {
-    padding: 12px;
-    background-color: rgba(4, 50, 60, 0.3);
-    border-radius: 8px;
-    text-align: center;
-    border: 1px solid rgba(6, 136, 170, 0.2);
-  }
+.metric-box {
+padding: 12px;
+background-color: rgba(4, 50, 60, 0.3);
+border-radius: 8px;
+text-align: center;
+border: 1px solid rgba(6, 136, 170, 0.2);
+}
 
-  .history-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
+.history-table {
+width: 100%;
+border-collapse: collapse;
+}
 
-  .table-header {
-    background-color: rgba(6, 136, 170, 0.3);
-    border-bottom: 1px solid rgba(6, 136, 170, 0.5);
-    padding: 12px 16px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #67e8f9;
-  }
+.table-header {
+background-color: rgba(6, 136, 170, 0.3);
+border-bottom: 1px solid rgba(6, 136, 170, 0.5);
+padding: 12px 16px;
+font-size: 12px;
+font-weight: 600;
+color: #67e8f9;
+}
 
-  .table-cell {
-    padding: 12px 16px;
-    border-bottom: 1px solid rgba(6, 136, 170, 0.2);
-    font-size: 12px;
-  }
+.table-cell {
+padding: 12px 16px;
+border-bottom: 1px solid rgba(6, 136, 170, 0.2);
+font-size: 12px;
+}
 
-  .grid-3-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
+.grid-3-col {
+display: grid;
+grid-template-columns: 1fr 1fr 1fr;
+gap: 16px;
+margin-bottom: 16px;
+}
 
-  .flex-col {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
+.flex-col {
+display: flex;
+flex-direction: column;
+gap: 16px;
+}
 
-  .flex-center {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-  }
+.flex-center {
+display: flex;
+align-items: center;
+gap: 24px;
+}
 
-  .pie-chart {
-    width: 140px;
-    height: 140px;
-    border-radius: 50%;
-    background: conic-gradient(
-      #ef4444 0% 45%,
-      #f59e0b 45% 75%,
-      #10b981 75% 90%,
-      #3b82f6 90% 100%
-    );
-    margin: 0 auto;
-    position: relative;
-  }
+.pie-chart {
+width: 140px;
+height: 140px;
+border-radius: 50%;
+background: conic-gradient(
+#ef4444 0% 45%,
+#f59e0b 45% 75%,
+#10b981 75% 90%,
+#3b82f6 90% 100%
+);
+margin: 0 auto;
+position: relative;
+}
 
-  .pie-center {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 60px;
-    height: 60px;
-    background: #041018;
-    border-radius: 50%;
-  }
+.pie-center {
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: 60px;
+height: 60px;
+background: #041018;
+border-radius: 50%;
+}
 
-  .threat-report {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    padding: 16px;
-    border-radius: 12px;
-    margin-top: 16px;
-  }
+.threat-report {
+background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
+border: 1px solid rgba(239, 68, 68, 0.3);
+padding: 16px;
+border-radius: 12px;
+margin-top: 16px;
+}
 
-  .threat-reason {
-    background: rgba(239, 68, 68, 0.1);
-    padding: 8px 12px;
-    border-radius: 6px;
-    border-left: 3px solid #ef4444;
-    margin-top: 6px;
-  }
+.threat-reason {
+background: rgba(239, 68, 68, 0.1);
+padding: 8px 12px;
+border-radius: 6px;
+border-left: 3px solid #ef4444;
+margin-top: 6px;
+}
 
-  .section-heading {
-    font-size: 18px;
-    font-weight: 700;
-    color: #67e8f9;
-    margin-bottom: 16px;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
+.section-heading {
+font-size: 18px;
+font-weight: 700;
+color: #67e8f9;
+margin-bottom: 16px;
+text-align: center;
+text-transform: uppercase;
+letter-spacing: 1px;
+}
 
-  .sub-heading {
-    font-size: 14px;
-    font-weight: 600;
-    color: #67e8f9;
-    margin-bottom: 12px;
-  }
+.sub-heading {
+font-size: 14px;
+font-weight: 600;
+color: #67e8f9;
+margin-bottom: 12px;
+}
 
-  .report-heading {
-    font-size: 16px;
-    font-weight: 700;
-    color: #f87171;
-    margin-bottom: 12px;
-    text-align: center;
-  }
+.report-heading {
+font-size: 16px;
+font-weight: 700;
+color: #f87171;
+margin-bottom: 12px;
+text-align: center;
+}
 
-  .text-sm { font-size: 16px; }
-  .text-xs { font-size: 14px; }
-  .text-2xl { font-size: 24px; }
-  .text-3xl { font-size: 32px; }
-  .text-4xl { font-size: 40px; }
-  .font-bold { font-weight: bold; }
-  .font-semibold { font-weight: 600; }
-  .text-cyan-200 { color: #67e8f9; }
-  .text-cyan-300 { color: #5eead4; }
-  .text-cyan-400 { color: #2dd4bf; }
-  .text-green-300 { color: #4ade80; }
-  .text-yellow-300 { color: #fbbf24; }
-  .text-red-300 { color: #f87171; }
-  .mb-2 { margin-bottom: 8px; }
-  .mb-3 { margin-bottom: 12px; }
-  .mb-4 { margin-bottom: 16px; }
-  .mt-2 { margin-top: 8px; }
-  .mt-4 { margin-top: 16px; }
-  .text-center { text-align: center; }
-  .w-full { width: 100%; }
-  .max-h-80 { max-height: 320px; }
-  .overflow-auto { overflow: auto; }
-  .overflow-y-auto { overflow-y: auto; }
-  .pr-2 { padding-right: 8px; }
+.text-sm { font-size: 16px; }
+.text-xs { font-size: 14px; }
+.text-2xl { font-size: 24px; }
+.text-3xl { font-size: 32px; }
+.text-4xl { font-size: 40px; }
+.font-bold { font-weight: bold; }
+.font-semibold { font-weight: 600; }
+.text-cyan-200 { color: #67e8f9; }
+.text-cyan-300 { color: #5eead4; }
+.text-cyan-400 { color: #2dd4bf; }
+.text-green-300 { color: #4ade80; }
+.text-yellow-300 { color: #fbbf24; }
+.text-red-300 { color: #f87171; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+.mt-2 { margin-top: 8px; }
+.mt-4 { margin-top: 16px; }
+.text-center { text-align: center; }
+.w-full { width: 100%; }
+.max-h-80 { max-height: 320px; }
+.overflow-auto { overflow: auto; }
+.overflow-y-auto { overflow-y: auto; }
+.pr-2 { padding-right: 8px; }
 `;
 
+export default function PhishingDetectionPopup({ report }) {
+  const url = report?.url || ''; // Ensure `report` is defined
+  const threatScore = report?.threat_score || 0; // Default to 0 if undefined
+  const threatReasons = report?.reasoning_highlights || [];
+  const category = report?.verdict?.split(" ")[1] || "UNKNOWN";
 
-export default function PhishingDetectionPopup() {
-  // =========================================================================
-  // V V V V  START of the section you need to REPLACE/UPDATE  V V V V
-  // =========================================================================
+  const mlDetails = report?.ml_details || {};
+  const contentDetails = report?.content_details || {};
+  const mlFeatures = mlDetails?.features || {};
 
-  // 1. SIMPLIFIED STATE MANAGEMENT
-  // Delete all your old useState hooks for url, threatScore, category, etc.
-  // Replace them with these three:
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [report, setReport] = useState(null); // This is now your SINGLE SOURCE OF TRUTH
-
-  // 2. THE API CALLING ENGINE (useEffect Hook)
-  // This block runs automatically when the popup opens.
-  useEffect(() => {
-    // Check if running as a Chrome extension
-    if (chrome && chrome.tabs) {
-      // Get the URL of the user's currently active tab
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const currentTabUrl = tabs[0]?.url;
-        if (!currentTabUrl) {
-            setError("Could not get the URL of the current tab.");
-            setIsLoading(false);
-            return;
-        }
-
-        // Call your backend API with the live URL
-        fetch("http://127.0.0.1:8000/api/v1/analyze", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: currentTabUrl }),
-        })
-        .then(response => {
-          if (!response.ok) { throw new Error('API network response failed'); }
-          return response.json();
-        })
-        .then(data => {
-          console.log("SUCCESS: Received API Response:", data);
-          setReport(data); // Store the entire backend report in our state
-          setIsLoading(false); // We're done loading
-        })
-        .catch(apiError => {
-          console.error("API Error:", apiError);
-          setError("Failed to get analysis. Is the Python backend server running?");
-          setIsLoading(false);
-        });
-      });
-    } else {
-      setError("This must be run as a Chrome extension.");
-      setIsLoading(false);
-    }
-
-    // Your existing style injection logic is perfect, keep it.
-    const styleElement = document.createElement('style');
-    styleElement.textContent = dashboardStyles;
-    document.head.appendChild(styleElement);
-    return () => { document.head.removeChild(styleElement); };
-  }, []);
-
-  // 3. HANDLE LOADING AND ERROR STATES
-  // This provides a better user experience while waiting for the API.
-  if (isLoading) {
-    return <div style={{ color: 'white', padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>Analyzing current page...</div>;
-  }
-  if (error || !report || report.success === false) {
-    return <div style={{ color: '#f87171', padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>Error: {error || report.error || 'No report available.'}</div>;
-  }
-
-  // 4. THE "BRIDGE": DERIVE UI VARIABLES FROM THE LIVE REPORT
-  // This connects the API data to your existing UI components.
-  const url = report.url;
-  const threatScore = report.final_score; // Use the final score from the scoring engine
-  const threatReasons = report.reasoning_highlights || [];
-  const category = report.verdict.split(" ")[1] || "UNKNOWN";
-
-  // Derive the parameters from the nested ML details
-  const mlDetails = report.ml_details || {};
-  const mlFeatures = mlDetails.features || {};
   const params = [
     { key: 'ML Model Confidence', value: Math.round((mlDetails.confidence || 0) * 100) },
     { key: 'Domain Age (Days)', value: mlFeatures.domain_age !== -1 ? mlFeatures.domain_age : 'N/A' },
+    { key: 'Insecure Password Form', value: contentDetails.has_insecure_password_form ? 'YES' : 'NO' },
+    { key: 'Form Action is External', value: contentDetails.form_action_is_external ? 'YES' : 'NO' },
     { key: 'Uses IP Address', value: mlFeatures.uses_ip_address ? 'YES' : 'NO' },
-    { key: 'Insecure Password Form', value: report.ml_details.features.has_insecure_password_form ? 'YES' : 'NO' }
-    // Add more features from the `mlFeatures` object as you see fit
   ];
 
-  // For the demo, we can keep the history and systemMetrics static for now
   const history = [
-      { url: 'example.com', date: '2023-10-19', score: 20, status: 'SAFE' },
-      { url: 'paypal-secure.log', date: '2023-10-16', score: 87, status: 'MALICIOUS' }
+    { url: 'example.com', date: '2023-10-19', score: 20, status: 'SAFE' },
+    // ...existing static history data...
   ];
-  const systemMetrics = { totalScans: 1253, blockedLinks: 81, avgLatency: '650 ms' };
 
+  const systemMetrics = {
+    totalScans: 1253,
+    blockedLinks: 81,
+    avgLatency: '650 ms',
+  };
 
+  // Inject styles on component mount
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = dashboardStyles;
+    document.head.appendChild(styleElement);
 
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
 
   // Helper function to get status color
   function getStatusColor(status) {
@@ -331,23 +274,27 @@ export default function PhishingDetectionPopup() {
 
   // ParamRow component
   function ParamRow({ param }) {
+    const isNumeric = typeof param.value === 'number';
+    const displayValue = isNumeric ? param.value : param.value.toString();
+    const color = isNumeric ? getScoreColor(param.value) : '#b6ecff';
+
     return (
       <div className="mb-4">
         <div className="flex justify-between text-xs text-cyan-200 mb-2">
           <span className="font-semibold">{param.key}</span>
-          <span className="font-bold" style={{ color: getScoreColor(param.value) }}>
-            {param.value}
-          </span>
+          <span className="font-bold" style={{ color: color }}>{displayValue}</span>
         </div>
-        <div className="param-bar">
-          <div
-            className="param-fill"
-            style={{
-              width: `${param.value}%`,
-              background: `linear-gradient(90deg, ${getScoreColor(param.value)}99, ${getScoreColor(param.value)})`
-            }}
-          />
-        </div>
+        {isNumeric && (
+          <div className="param-bar">
+            <div
+              className="param-fill"
+              style={{
+                width: `${param.value}%`,
+                background: `linear-gradient(90deg, ${getScoreColor(param.value)}99, ${getScoreColor(param.value)})`
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -364,18 +311,18 @@ export default function PhishingDetectionPopup() {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <h1 className="dashboard-title">PHISHING DETECTION DASHBOARD</h1>
+        <h1 className="dashboard-title">Live Test</h1>
       </header>
 
       <div className="grid-3-col">
         {/* Left column: Real-time Threat Scan with Report */}
         <div className="dashboard-card">
           <div className="section-heading">REAL-TIME THREAT SCAN</div>
-          
+
           <div className="mb-4">
             <input
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              readOnly
               className="scan-input"
               placeholder="Enter URL to scan..."
             />
@@ -421,7 +368,7 @@ export default function PhishingDetectionPopup() {
             </div>
           </div>
 
-          {/* SCAN REPORT - Placed in the highlighted area */}
+          {/* SCAN REPORT */}
           <div className="threat-report">
             <div className="report-heading">SCAN REPORT</div>
             <div className="text-xs text-cyan-200 mb-3">
@@ -531,10 +478,6 @@ export default function PhishingDetectionPopup() {
                 <div className="text-sm text-cyan-300">Blocked Links</div>
               </div>
               <div className="metric-box">
-                <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.offlineDetections}</div>
-                <div className="text-sm text-cyan-300">Offline Detections</div>
-              </div>
-              <div className="metric-box">
                 <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.avgLatency}</div>
                 <div className="text-sm text-cyan-300">Avg Response</div>
               </div>
@@ -593,10 +536,10 @@ export default function PhishingDetectionPopup() {
         </div>
       </div>
 
-      <footer style={{ 
-        marginTop: '16px', 
-        textAlign: 'center', 
-        fontSize: '14px', 
+      <footer style={{
+        marginTop: '16px',
+        textAlign: 'center',
+        fontSize: '14px',
         color: '#67e8f9',
         backgroundColor: 'rgba(6, 136, 170, 0.2)',
         padding: '12px',
@@ -611,3 +554,4 @@ export default function PhishingDetectionPopup() {
     </div>
   );
 }
+
