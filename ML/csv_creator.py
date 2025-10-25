@@ -15,7 +15,7 @@ def create_clean_balanced_dataset():
     # Read phishing URLs
     df_phish = pd.read_csv(INPUT_FILE)
     # Take diverse phishing samples
-    phishing_urls = df_phish['url'].dropna().unique()[:3000]
+    phishing_urls = df_phish['url'].dropna().unique()[:8000]
     
     # REAL legitimate URLs - these should look completely normal
     legitimate_urls = [

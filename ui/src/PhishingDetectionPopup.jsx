@@ -215,55 +215,102 @@ const dashboardStyles = `
   .pr-2 { padding-right: 8px; }
 `;
 
+
 export default function PhishingDetectionPopup() {
-  const [url, setUrl] = useState('https://paypal-secure-login.com');
-  const [threatScore, setThreatScore] = useState(82);
-  const [category, setCategory] = useState('MALICIOUS');
-  
-  const [params, setParams] = useState([
-    { key: 'URL Length Score', value: 70 },
-    { key: 'Special Characters Count', value: 80 },
-    { key: 'Domain Age', value: 60 },
-    { key: 'HTTPS/SSL Validity', value: 40 },
-    { key: 'Entropy/Obfuscation', value: 85 },
-    { key: 'OCR Logo Match Score', value: 85 },
-    { key: 'ML Model Confidence', value: 80 },
-    { key: 'QR Content Type (URL)', value: 70 },
-  ]);
+  // =========================================================================
+  // V V V V  START of the section you need to REPLACE/UPDATE  V V V V
+  // =========================================================================
 
-  const [threatReasons, setThreatReasons] = useState([
-    "Suspicious domain name mimicking 'paypal-secure-login'",
-    "Low domain age (registered recently)",
-    "High entropy suggesting obfuscation",
-    "Logo mismatch detected (PayP vs PayPal)",
-    "SSL certificate validity issues",
-    "Unusual special characters in URL"
-  ]);
+  // 1. SIMPLIFIED STATE MANAGEMENT
+  // Delete all your old useState hooks for url, threatScore, category, etc.
+  // Replace them with these three:
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [report, setReport] = useState(null); // This is now your SINGLE SOURCE OF TRUTH
 
-  const [history, setHistory] = useState([
-    { url: 'example.com', date: '2023-10-19', score: 20, status: 'SAFE' },
-    { url: 'paypal-secure.log', date: '2023-10-16', score: 57, status: 'MALICIOUS' },
-    { url: 'secure-login.net', date: '2023-10-09', score: 43, status: 'SUSPICIOUS' },
-    { url: 'bank-security.com', date: '2023-10-09', score: 63, status: 'SUSPICIOUS' },
-  ]);
-
-  const [systemMetrics, setSystemMetrics] = useState({
-    totalScans: 1253,
-    blockedLinks: 81,
-    offlineDetections: 34,
-    avgLatency: '200 ms',
-  });
-
-  // Inject styles on component mount
+  // 2. THE API CALLING ENGINE (useEffect Hook)
+  // This block runs automatically when the popup opens.
   useEffect(() => {
+    // Check if running as a Chrome extension
+    if (chrome && chrome.tabs) {
+      // Get the URL of the user's currently active tab
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const currentTabUrl = tabs[0]?.url;
+        if (!currentTabUrl) {
+            setError("Could not get the URL of the current tab.");
+            setIsLoading(false);
+            return;
+        }
+
+        // Call your backend API with the live URL
+        fetch("http://127.0.0.1:8000/api/v1/analyze", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: currentTabUrl }),
+        })
+        .then(response => {
+          if (!response.ok) { throw new Error('API network response failed'); }
+          return response.json();
+        })
+        .then(data => {
+          console.log("SUCCESS: Received API Response:", data);
+          setReport(data); // Store the entire backend report in our state
+          setIsLoading(false); // We're done loading
+        })
+        .catch(apiError => {
+          console.error("API Error:", apiError);
+          setError("Failed to get analysis. Is the Python backend server running?");
+          setIsLoading(false);
+        });
+      });
+    } else {
+      setError("This must be run as a Chrome extension.");
+      setIsLoading(false);
+    }
+
+    // Your existing style injection logic is perfect, keep it.
     const styleElement = document.createElement('style');
     styleElement.textContent = dashboardStyles;
     document.head.appendChild(styleElement);
-
-    return () => {
-      document.head.removeChild(styleElement);
-    };
+    return () => { document.head.removeChild(styleElement); };
   }, []);
+
+  // 3. HANDLE LOADING AND ERROR STATES
+  // This provides a better user experience while waiting for the API.
+  if (isLoading) {
+    return <div style={{ color: 'white', padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>Analyzing current page...</div>;
+  }
+  if (error || !report || report.success === false) {
+    return <div style={{ color: '#f87171', padding: '20px', fontFamily: 'monospace', textAlign: 'center' }}>Error: {error || report.error || 'No report available.'}</div>;
+  }
+
+  // 4. THE "BRIDGE": DERIVE UI VARIABLES FROM THE LIVE REPORT
+  // This connects the API data to your existing UI components.
+  const url = report.url;
+  const threatScore = report.final_score; // Use the final score from the scoring engine
+  const threatReasons = report.reasoning_highlights || [];
+  const category = report.verdict.split(" ")[1] || "UNKNOWN";
+
+  // Derive the parameters from the nested ML details
+  const mlDetails = report.ml_details || {};
+  const mlFeatures = mlDetails.features || {};
+  const params = [
+    { key: 'ML Model Confidence', value: Math.round((mlDetails.confidence || 0) * 100) },
+    { key: 'Domain Age (Days)', value: mlFeatures.domain_age !== -1 ? mlFeatures.domain_age : 'N/A' },
+    { key: 'Uses IP Address', value: mlFeatures.uses_ip_address ? 'YES' : 'NO' },
+    { key: 'Insecure Password Form', value: report.ml_details.features.has_insecure_password_form ? 'YES' : 'NO' }
+    // Add more features from the `mlFeatures` object as you see fit
+  ];
+
+  // For the demo, we can keep the history and systemMetrics static for now
+  const history = [
+      { url: 'example.com', date: '2023-10-19', score: 20, status: 'SAFE' },
+      { url: 'paypal-secure.log', date: '2023-10-16', score: 87, status: 'MALICIOUS' }
+  ];
+  const systemMetrics = { totalScans: 1253, blockedLinks: 81, avgLatency: '650 ms' };
+
+
+
 
   // Helper function to get status color
   function getStatusColor(status) {
