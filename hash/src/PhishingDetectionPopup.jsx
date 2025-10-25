@@ -104,13 +104,6 @@ const dashboardStyles = `
     font-size: 12px;
   }
 
-  .grid-2-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
   .grid-3-col {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -160,6 +153,7 @@ const dashboardStyles = `
     border: 1px solid rgba(239, 68, 68, 0.3);
     padding: 16px;
     border-radius: 12px;
+    margin-top: 16px;
   }
 
   .threat-reason {
@@ -178,14 +172,6 @@ const dashboardStyles = `
     text-align: center;
     text-transform: uppercase;
     letter-spacing: 1px;
-  }
-
-  .block-heading {
-    font-size: 16px;
-    font-weight: 700;
-    color: #67e8f9;
-    margin-bottom: 12px;
-    text-align: center;
   }
 
   .sub-heading {
@@ -334,11 +320,10 @@ export default function PhishingDetectionPopup() {
         <h1 className="dashboard-title">PHISHING DETECTION DASHBOARD</h1>
       </header>
 
-      {/* Top Row: Real-time Scan + Detailed Parameter Breakdown */}
-      <div className="grid-2-col">
-        {/* Left: Real-time Threat Scan */}
+      <div className="grid-3-col">
+        {/* Left column: Real-time Threat Scan with Report */}
         <div className="dashboard-card">
-          <div className="block-heading">Real-time Scan</div>
+          <div className="section-heading">REAL-TIME THREAT SCAN</div>
           
           <div className="mb-4">
             <input
@@ -388,29 +373,14 @@ export default function PhishingDetectionPopup() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Right: Detailed Parameter Breakdown */}
-        <div className="dashboard-card">
-          <div className="block-heading">Detailed Parameter Breakdown</div>
-          <div className="max-h-80 overflow-y-auto pr-2">
-            {params.map((param) => (
-              <ParamRow key={param.key} param={param} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Middle Row: Scan Report + System Metrics */}
-      <div className="grid-2-col">
-        {/* Left: Scan Report */}
-        <div className="dashboard-card">
-          <div className="block-heading">Scan Report</div>
+          {/* SCAN REPORT - Placed in the highlighted area */}
           <div className="threat-report">
+            <div className="report-heading">SCAN REPORT</div>
             <div className="text-xs text-cyan-200 mb-3">
               This URL was classified as <span style={{ color: '#f87171', fontWeight: 'bold' }}>MALICIOUS</span> because:
             </div>
-            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
               {threatReasons.map((reason, index) => (
                 <div key={index} className="threat-reason">
                   <div className="text-xs text-red-200">• {reason}</div>
@@ -420,34 +390,116 @@ export default function PhishingDetectionPopup() {
           </div>
         </div>
 
-        {/* Right: System Metrics */}
+        {/* Middle column: Parameter Breakdown */}
         <div className="dashboard-card">
-          <div className="block-heading">System</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', textAlign: 'center' }}>
-            <div className="metric-box">
-              <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.totalScans}</div>
-              <div className="text-sm text-cyan-300">Total Scans</div>
+          <div className="section-heading">DETAILED PARAMETER BREAKDOWN</div>
+
+          <div className="max-h-80 overflow-y-auto pr-2">
+            {params.map((param) => (
+              <ParamRow key={param.key} param={param} />
+            ))}
+          </div>
+        </div>
+
+        {/* Right column: Visualization + OCR + Metrics */}
+        <div className="flex-col">
+          {/* Visualization */}
+          <div className="dashboard-card">
+            <div className="section-heading">VISUALIZATION & ANALYTICS</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{
+                height: '120px',
+                backgroundColor: 'rgba(4, 50, 60, 0.3)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#67e8f9',
+                fontSize: '14px'
+              }}>
+                Bar Chart
+              </div>
+              <div style={{
+                height: '120px',
+                backgroundColor: 'rgba(4, 50, 60, 0.3)',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#67e8f9',
+                fontSize: '14px'
+              }}>
+                Pie Chart
+              </div>
             </div>
-            <div className="metric-box">
-              <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.blockedLinks}</div>
-              <div className="text-sm text-cyan-300">Blocked Links</div>
+          </div>
+
+          {/* OCR Verification */}
+          <div className="dashboard-card">
+            <div className="sub-heading">OCR & VISUAL VERIFICATION</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ padding: '12px', backgroundColor: 'rgba(4, 50, 60, 0.3)', borderRadius: '8px', textAlign: 'center' }}>
+                <div className="text-sm text-cyan-200 mb-2">Detected Logo</div>
+                <div style={{ 
+                  backgroundColor: 'rgba(6, 136, 170, 0.2)', 
+                  padding: '16px', 
+                  borderRadius: '4px', 
+                  fontFamily: 'monospace', 
+                  color: '#b6ecff',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}>
+                  PayP
+                </div>
+                <div className="text-xs text-cyan-400 mt-2">Confidence: 52%</div>
+              </div>
+              <div style={{ padding: '12px', backgroundColor: 'rgba(4, 50, 60, 0.3)', borderRadius: '8px', textAlign: 'center' }}>
+                <div className="text-sm text-cyan-200 mb-2">Matched Logo</div>
+                <div style={{ 
+                  backgroundColor: 'rgba(6, 136, 170, 0.2)', 
+                  padding: '16px', 
+                  borderRadius: '4px', 
+                  fontFamily: 'monospace', 
+                  color: '#b6ecff',
+                  fontSize: '16px',
+                  fontWeight: 'bold'
+                }}>
+                  PayPal
+                </div>
+                <div className="text-xs text-cyan-400 mt-2">Confidence: 52%</div>
+              </div>
             </div>
-            <div className="metric-box">
-              <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.offlineDetections}</div>
-              <div className="text-sm text-cyan-300">Offline Detections</div>
-            </div>
-            <div className="metric-box">
-              <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.avgLatency}</div>
-              <div className="text-sm text-cyan-300">Avg Response</div>
+          </div>
+
+          {/* System Metrics */}
+          <div className="dashboard-card">
+            <div className="sub-heading">SYSTEM METRICS</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', textAlign: 'center' }}>
+              <div className="metric-box">
+                <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.totalScans}</div>
+                <div className="text-sm text-cyan-300">Total Scans</div>
+              </div>
+              <div className="metric-box">
+                <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.blockedLinks}</div>
+                <div className="text-sm text-cyan-300">Blocked Links</div>
+              </div>
+              <div className="metric-box">
+                <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.offlineDetections}</div>
+                <div className="text-sm text-cyan-300">Offline Detections</div>
+              </div>
+              <div className="metric-box">
+                <div className="text-2xl font-bold" style={{ color: '#f0f9ff' }}>{systemMetrics.avgLatency}</div>
+                <div className="text-sm text-cyan-300">Avg Response</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Row: Scan History */}
+      {/* History Table */}
       <div className="dashboard-card">
-        <div className="block-heading">Scan History</div>
-        <div className="overflow-auto" style={{ maxHeight: '200px' }}>
+        <div className="section-heading" style={{ textAlign: 'left' }}>SCAN HISTORY</div>
+        <div className="overflow-auto" style={{ maxHeight: '192px' }}>
           <table className="history-table">
             <thead>
               <tr>
