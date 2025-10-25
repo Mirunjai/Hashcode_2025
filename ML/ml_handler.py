@@ -2,7 +2,7 @@
 import joblib
 import pandas as pd
 from pathlib import Path
-from feature_extractor import FastFeatureExtractor  # Use the fast one!
+from feature_extractor import FeatureExtractor  # Use the fast one!
 
 class MLHandler:
     def __init__(self, model_path: str = "ML/models/phishing_model.joblib"):
@@ -23,7 +23,7 @@ class MLHandler:
             
             self.model = model_payload['model']
             self.feature_names = model_payload.get('feature_names', [])
-            self.feature_extractor = FastFeatureExtractor()  # Use fast extractor
+            self.feature_extractor = FeatureExtractor()  # Use fast extractor
             self.is_loaded = True
             
             print(f"Model loaded successfully!")

@@ -2,15 +2,10 @@
 import joblib
 import pandas as pd
 from pathlib import Path
-from feature_extractor import FeatureExtractor
+from feature_extractor import FeatureExtractor  # Use the fast one!
 
 class MLHandler:
-    """
-    Main ML interface for the phishing detection system.
-    Handles model loading, prediction, and management.
-    """
-    
-    def __init__(self, model_path: str = "models/phishing_model.joblib"):
+    def __init__(self, model_path: str = "ML/models/phishing_model.joblib"):
         self.model_path = Path(model_path)
         self.model = None
         self.feature_extractor = None
@@ -28,7 +23,7 @@ class MLHandler:
             
             self.model = model_payload['model']
             self.feature_names = model_payload.get('feature_names', [])
-            self.feature_extractor = FeatureExtractor()
+            self.feature_extractor = FeatureExtractor()  # Use fast extractor
             self.is_loaded = True
             
             print(f"Model loaded successfully!")
@@ -52,7 +47,7 @@ class MLHandler:
                 return self._error_response("Model not loaded")
         
         try:
-            # Extract features
+            # Extract features using FAST extractor (no WHOIS)
             features_dict = self.feature_extractor.extract_features(url)
             
             # Convert to proper format for model
@@ -72,7 +67,6 @@ class MLHandler:
                 'action': action,
                 'confidence': round(probability, 3),
                 'url': url,
-                'features': features_dict, # Expose the calculated features for the scoring engine
                 'features_analyzed': len(features_dict),
                 'model_loaded': True
             }
@@ -119,6 +113,46 @@ class MLHandler:
         features_df = features_df.replace([float('inf'), float('-inf')], -1)
         
         return features_df
+    
+    def get_feature_analysis(self, url: str) -> dict:
+        """Get detailed feature analysis for a URL"""
+        if not self.is_loaded:
+            self.load_model()
+
+        features_dict = self.feature_extractor.extract_features(url)
+        features_df = self._prepare_features(features_dict)
+
+        # Get feature importances and calculate contributions
+        importances = self.model.feature_importances_
+        feature_row = features_df.iloc[0]
+    
+        contributions = []
+        for i, feature_name in enumerate(self.feature_names):
+            if i < len(importances):
+                importance = importances[i]
+                value = feature_row[feature_name]
+
+                # Calculate contribution
+                if feature_name in ['has_ip', 'has_shortening', 'whois_lookup_failed']:
+                    contribution = importance * value * 100
+                else:
+                    contribution = importance * abs(value) * 10
+                
+                contributions.append({
+                    'feature': feature_name,
+                    'value': value,
+                    'importance': importance,
+                    'contribution': contribution
+                })
+    
+        # Sort by absolute contribution
+        contributions.sort(key=lambda x: abs(x['contribution']), reverse=True)
+    
+        return {
+            'features': features_dict,
+            'contributions': contributions,
+            'top_contributors': contributions[:5]
+        }
     
     def _classify_threat(self, score: int) -> tuple:
         """Convert threat score to verdict and action"""
