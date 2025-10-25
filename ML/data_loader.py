@@ -38,7 +38,7 @@ def load_legitimate_data():
         "https://chase.com", "https://bankofamerica.com", "https://wellsfargo.com"
     ] * 25  # Scale to ~500 URLs
     
-    print(f"✅ Loaded {len(legitimate_urls)} legitimate URLs")
+    print(f"Loaded {len(legitimate_urls)} legitimate URLs")
     return legitimate_urls
 
 def get_balanced_dataset():

@@ -23,7 +23,7 @@ class MLHandler:
             if not self.model_path.exists():
                 raise FileNotFoundError(f"Model file not found: {self.model_path}")
             
-            print("🧠 Loading ML model...")
+            print("Loading ML model...")
             model_payload = joblib.load(self.model_path)
             
             self.model = model_payload['model']
@@ -31,14 +31,14 @@ class MLHandler:
             self.feature_extractor = FeatureExtractor()
             self.is_loaded = True
             
-            print(f"✅ Model loaded successfully!")
-            print(f"📊 Features: {len(self.feature_names)}")
-            print(f"🤖 Model type: {type(self.model).__name__}")
+            print(f"Model loaded successfully!")
+            print(f"Features: {len(self.feature_names)}")
+            print(f"Model type: {type(self.model).__name__}")
             
             return True
             
         except Exception as e:
-            print(f"❌ Failed to load model: {e}")
+            print(f"Failed to load model: {e}")
             self.is_loaded = False
             return False
     
@@ -77,7 +77,7 @@ class MLHandler:
             }
             
         except Exception as e:
-            print(f"❌ Prediction error for {url}: {e}")
+            print(f"Prediction error for {url}: {e}")
             return self._error_response(str(e))
     
     def predict_batch(self, urls: list) -> list:
@@ -134,7 +134,7 @@ class MLHandler:
             'success': False,
             'error': error_msg,
             'threat_score': -1,
-            'verdict': '❌ ERROR',
+            'verdict': 'ERROR',
             'action': 'Review manually',
             'model_loaded': self.is_loaded
         }
