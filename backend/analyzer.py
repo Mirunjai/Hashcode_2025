@@ -1,7 +1,7 @@
 """
 analyzer.py — LinkLens Core Analyzer
-Loads the ML model once, then scores any URL using features.py.
-Returns a clean, UI-ready result dict.
+Loads the ML model once, scores any URL using features.py,
+and returns a clean UI-ready result dict.
 """
 
 from pathlib import Path
@@ -10,8 +10,6 @@ import pandas as pd
 
 from features import extract
 
-
-# ── Model singleton ───────────────────────────────────────────────────────────
 _model        = None
 _feature_cols = []
 MODEL_PATH    = Path(__file__).parent / "models" / "phishing_model.joblib"
@@ -31,7 +29,6 @@ def load_model() -> bool:
         return False
 
 
-# ── Scoring helpers ───────────────────────────────────────────────────────────
 def _verdict(score: int) -> str:
     if score < 30:  return "SAFE"
     if score < 70:  return "SUSPICIOUS"
@@ -39,20 +36,21 @@ def _verdict(score: int) -> str:
 
 
 def _highlights(feat: dict, verdict: str) -> list[str]:
-    """Plain-English explanation bullets for the UI."""
     notes = []
+    if feat.get("homoglyph_spoof"):
+        notes.append("Domain uses character substitution to impersonate a known brand.")
+    if feat.get("brand_spoof"):
+        notes.append("A brand name appears in the URL but not in the actual domain.")
     if feat.get("uses_ip"):
         notes.append("URL uses a raw IP address instead of a domain name.")
     if feat.get("is_shortened"):
         notes.append("URL passes through a link shortener — destination hidden.")
-    if feat.get("brand_spoof"):
-        notes.append("A brand name appears in the URL but not in the actual domain.")
     if feat.get("risky_tld"):
         notes.append("Domain uses a TLD commonly associated with free/spam sites.")
     if feat.get("phish_keywords", 0) >= 2:
         notes.append(f"{feat['phish_keywords']} phishing-related keywords detected in URL.")
     if feat.get("http_count", 0) > 1:
-        notes.append("URL contains an embedded URL (classic redirect trick).")
+        notes.append("URL contains an embedded URL — classic redirect trick.")
     if feat.get("url_entropy", 0) > 4.5:
         notes.append("High URL entropy — suggests randomised or obfuscated characters.")
     if feat.get("n_hyphens", 0) > 3:
@@ -63,21 +61,19 @@ def _highlights(feat: dict, verdict: str) -> list[str]:
 
 
 def _param_bars(feat: dict, confidence: float) -> list[dict]:
-    """Convert raw features into label/value pairs for the progress bars."""
-    def clamp(v, lo=0, hi=100): return max(lo, min(hi, int(v)))
-
+    def clamp(v): return max(0, min(100, int(v)))
     return [
-        {"label": "URL Length",        "value": clamp(feat.get("url_len", 0) / 2)},
-        {"label": "Special Characters","value": clamp(feat.get("n_hyphens", 0) * 20
-                                                      + feat.get("n_at", 0) * 40)},
-        {"label": "Phish Keywords",    "value": clamp(feat.get("phish_keywords", 0) * 25)},
-        {"label": "URL Entropy",       "value": clamp(feat.get("url_entropy", 0) / 6 * 100)},
-        {"label": "Brand Spoofing",    "value": 100 if feat.get("brand_spoof") else 0},
-        {"label": "ML Confidence",     "value": clamp(confidence * 100)},
+        {"label": "URL Length",         "value": clamp(feat.get("url_len", 0) / 2)},
+        {"label": "Special Characters", "value": clamp(feat.get("n_hyphens", 0) * 20
+                                                       + feat.get("n_at", 0) * 40)},
+        {"label": "Phish Keywords",     "value": clamp(feat.get("phish_keywords", 0) * 25)},
+        {"label": "URL Entropy",        "value": clamp(feat.get("url_entropy", 0) / 6 * 100)},
+        {"label": "Brand Spoofing",     "value": 100 if feat.get("brand_spoof")
+                                                     or feat.get("homoglyph_spoof") else 0},
+        {"label": "ML Confidence",      "value": clamp(confidence * 100)},
     ]
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
 def analyze(url: str) -> dict:
     if _model is None:
         if not load_model():
@@ -86,15 +82,32 @@ def analyze(url: str) -> dict:
     try:
         feat = extract(url)
 
-        # Build dataframe aligned to training feature order
+        # Trusted domains are always SAFE — skip model scoring
+        if feat.get("is_trusted"):
+            return {
+                "url":        url,
+                "score":      0,
+                "verdict":    "SAFE",
+                "confidence": 0.0,
+                "highlights": ["No specific risk indicators found in URL structure."],
+                "bars":       _param_bars(feat, 0.0),
+            }
+
         row = pd.DataFrame([feat])
         for col in _feature_cols:
             if col not in row.columns:
                 row[col] = 0
         row = row[_feature_cols].fillna(0).replace([float("inf"), float("-inf")], 0)
 
-        prob    = float(_model.predict_proba(row)[0][1])
-        score   = int(prob * 100)
+        prob  = float(_model.predict_proba(row)[0][1])
+        score = int(prob * 100)
+
+        # Hard overrides for deterministic signals the model may underweight
+        if feat.get("homoglyph_spoof"):
+            score = max(score, 80)
+        if feat.get("brand_spoof"):
+            score = max(score, 70)
+
         verdict = _verdict(score)
 
         return {

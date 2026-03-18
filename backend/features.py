@@ -1,6 +1,6 @@
 """
 features.py — LinkLens Feature Extractor
-Pulls ~25 numerical signals from a raw URL string.
+Pulls 26 numerical signals from a raw URL string.
 No network calls. Runs in <1 ms.
 """
 
@@ -9,31 +9,40 @@ import math
 from urllib.parse import urlparse
 
 
-# Known trustworthy domains — scored immediately as low-risk
 TRUSTED = {
     "google.com", "github.com", "microsoft.com", "apple.com", "amazon.com",
     "paypal.com", "facebook.com", "youtube.com", "wikipedia.org", "reddit.com",
     "twitter.com", "instagram.com", "linkedin.com", "netflix.com", "bbc.com",
+    "nodejs.org", "npmjs.com", "pypi.org", "docs.python.org",
+    "developer.mozilla.org", "stackoverflow.com", "cloudflare.com",
+    "fastapi.tiangolo.com", "reactjs.org", "vitejs.dev",
+    "docs.github.com", "learn.microsoft.com", "support.apple.com",
 }
 
-# TLDs heavily associated with free/spam domains
 RISKY_TLDS = {".tk", ".ml", ".ga", ".cf", ".gq", ".xyz", ".top", ".loan", ".club"}
 
-# Phishing keyword list
 PHISH_WORDS = {
     "login", "secure", "account", "update", "verify", "confirm",
     "banking", "signin", "webscr", "paypal", "apple", "microsoft",
     "google", "amazon", "ebay",
 }
 
-# URL shorteners
-SHORTENERS = re.compile(
-    r"bit\.ly|goo\.gl|shorte\.st|ow\.ly|t\.co|tinyurl|go2l\.ink"
-)
+BRAND_CANONICAL = {"google", "amazon", "paypal", "apple", "microsoft", "facebook", "netflix"}
+
+# Single-char substitutions (0→o, 1→i, 4→a, 5→s, 6→b, 8→g, 9→i, |→i, l→i)
+_CHAR_MAP = str.maketrans("0145689|l", "oiasebgii")
+
+SHORTENERS = re.compile(r"bit\.ly|goo\.gl|shorte\.st|ow\.ly|t\.co|tinyurl|go2l\.ink")
+
+
+def _normalise(domain: str) -> str:
+    """Apply single-char and multi-char lookalike substitutions."""
+    d = domain.translate(_CHAR_MAP)
+    d = d.replace("rn", "m").replace("vv", "w").replace("cl", "d")
+    return d
 
 
 def _entropy(text: str) -> float:
-    """Shannon entropy of a string."""
     if not text:
         return 0.0
     freq = {c: text.count(c) / len(text) for c in set(text)}
@@ -41,59 +50,62 @@ def _entropy(text: str) -> float:
 
 
 def extract(url: str) -> dict:
-    """Return a flat dict of numerical features for the given URL."""
     if not re.match(r"^https?://", url):
         url = "http://" + url
 
     parsed = urlparse(url)
     domain = parsed.netloc.lower()
     path   = parsed.path
-
-    # Normalise domain (strip www.)
-    bare_domain = domain.replace("www.", "")
+    bare   = domain.replace("www.", "")
 
     f = {}
 
-    # ── Trust signal ──────────────────────────────────────────────────────────
-    f["is_trusted"]     = 1 if bare_domain in TRUSTED else 0
-    f["risky_tld"]      = 1 if any(domain.endswith(t) for t in RISKY_TLDS) else 0
-    f["uses_ip"]        = 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}", domain) else 0
-    f["is_shortened"]   = 1 if SHORTENERS.search(url) else 0
+    # ── Trust ─────────────────────────────────────────────────────────────────
+    f["is_trusted"]      = 1 if bare in TRUSTED else 0
+    f["risky_tld"]       = 1 if any(domain.endswith(t) for t in RISKY_TLDS) else 0
+    f["uses_ip"]         = 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}", domain) else 0
+    f["is_shortened"]    = 1 if SHORTENERS.search(url) else 0
 
-    # ── Length signals ────────────────────────────────────────────────────────
-    f["url_len"]        = len(url)
-    f["domain_len"]     = len(domain)
-    f["path_len"]       = len(path)
+    # ── Lengths ───────────────────────────────────────────────────────────────
+    f["url_len"]         = len(url)
+    f["domain_len"]      = len(domain)
+    f["path_len"]        = len(path)
 
     # ── Character counts ──────────────────────────────────────────────────────
-    f["n_dots"]         = url.count(".")
-    f["n_hyphens"]      = url.count("-")
-    f["n_at"]           = url.count("@")
-    f["n_question"]     = url.count("?")
-    f["n_equals"]       = url.count("=")
-    f["n_percent"]      = url.count("%")
-    f["n_slashes"]      = path.count("/")
-    f["n_digits"]       = sum(c.isdigit() for c in url)
-    f["n_letters"]      = sum(c.isalpha() for c in url)
-    f["http_count"]     = url.count("http")   # >1 means embedded URL
+    f["n_dots"]          = url.count(".")
+    f["n_hyphens"]       = url.count("-")
+    f["n_at"]            = url.count("@")
+    f["n_question"]      = url.count("?")
+    f["n_equals"]        = url.count("=")
+    f["n_percent"]       = url.count("%")
+    f["n_slashes"]       = path.count("/")
+    f["n_digits"]        = sum(c.isdigit() for c in url)
+    f["n_letters"]       = sum(c.isalpha() for c in url)
+    f["http_count"]      = url.count("http")
 
     # ── Ratios ────────────────────────────────────────────────────────────────
-    f["digit_ratio"]    = f["n_digits"]  / len(url) if url else 0
-    f["letter_ratio"]   = f["n_letters"] / len(url) if url else 0
-    f["path_ratio"]     = len(path)      / len(url) if url else 0
+    n = len(url) or 1
+    f["digit_ratio"]     = f["n_digits"]  / n
+    f["letter_ratio"]    = f["n_letters"] / n
+    f["path_ratio"]      = len(path)      / n
 
-    # ── Keyword signals ───────────────────────────────────────────────────────
-    lower = url.lower()
-    f["phish_keywords"] = sum(1 for w in PHISH_WORDS if w in lower)
+    # ── Keywords & brand ─────────────────────────────────────────────────────
+    lower       = url.lower()
     brand_words = ["paypal", "apple", "microsoft", "google", "amazon", "bank"]
-    f["has_brand"]      = 1 if any(b in lower for b in brand_words) else 0
-    # Brand in URL but NOT in the registered domain → impersonation signal
-    f["brand_spoof"]    = 1 if (
-        f["has_brand"] and not any(b in bare_domain for b in brand_words)
+    normalised  = _normalise(bare)
+
+    f["phish_keywords"]  = sum(1 for w in PHISH_WORDS if w in lower)
+    f["has_brand"]       = 1 if any(b in lower        for b in brand_words) else 0
+    f["brand_spoof"]     = 1 if (
+        f["has_brand"] and not any(b in bare for b in brand_words)
+    ) else 0
+    f["homoglyph_spoof"] = 1 if (
+        any(b in normalised for b in BRAND_CANONICAL)
+        and not any(b in bare for b in BRAND_CANONICAL)
     ) else 0
 
     # ── Entropy ───────────────────────────────────────────────────────────────
-    f["url_entropy"]    = round(_entropy(url), 3)
-    f["domain_entropy"] = round(_entropy(domain), 3)
+    f["url_entropy"]     = round(_entropy(url), 3)
+    f["domain_entropy"]  = round(_entropy(domain), 3)
 
     return f
