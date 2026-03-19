@@ -1,11 +1,13 @@
 """
 features.py — LinkLens Feature Extractor
-Pulls 26 numerical signals from a raw URL string.
-No network calls. Runs in <1 ms.
+Pulls 27 numerical signals from a raw URL string.
+Includes async WHOIS domain age with 5-second timeout and in-memory cache.
 """
-
+import os
 import re
 import math
+import threading
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 
@@ -40,22 +42,65 @@ PHISH_WORDS = {
 
 BRAND_CANONICAL = {"google", "amazon", "paypal", "apple", "microsoft", "facebook", "netflix"}
 
-# Single-char substitutions (0→o, 1→i, 4→a, 5→s, 6→b, 8→g, 9→i, |→i, l→i)
+# Single-char homoglyph map
 _CHAR_MAP = str.maketrans("0145689|l", "oiasebgii")
 
 SHORTENERS = re.compile(r"bit\.ly|goo\.gl|shorte\.st|ow\.ly|t\.co|tinyurl|go2l\.ink")
 
 
+# ── WHOIS domain age ──────────────────────────────────────────────────────────
+_whois_cache: dict = {}
+_whois_lock  = threading.Lock()
+
+
+def _whois_age_days(domain: str) -> int:
+    """
+    Returns domain age in days, or -1 if lookup fails or times out.
+    Results cached in-memory. Thread runs with 5-second hard timeout.
+    """
+    bare = domain.replace("www.", "").split(":")[0]
+
+    with _whois_lock:
+        if bare in _whois_cache:
+            return _whois_cache[bare]
+
+    result = [-1]
+
+    def _lookup():
+        try:
+            import whois
+            w    = whois.whois(bare)
+            date = w.creation_date
+            if isinstance(date, list):
+                date = date[0]
+            if isinstance(date, datetime):
+                if date.tzinfo is None:
+                    date = date.replace(tzinfo=timezone.utc)
+                age       = (datetime.now(timezone.utc) - date).days
+                result[0] = max(0, age)
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_lookup, daemon=True)
+    t.start()
+    t.join(timeout=5)
+
+    with _whois_lock:
+        _whois_cache[bare] = result[0]
+
+    return result[0]
+
+
+# ── Text helpers ──────────────────────────────────────────────────────────────
+
 def _normalise(domain: str) -> str:
     """Apply single-char and multi-char lookalike substitutions."""
-    d = domain.translate(_CHAR_MAP)
-    d = d.replace("rn", "m").replace("vv", "w").replace("cl", "d")
-    # Also try i→l substitution (capital I lowercases to i, fooling google→googie)
+    d  = domain.translate(_CHAR_MAP)
+    d  = d.replace("rn", "m").replace("vv", "w").replace("cl", "d")
     d2 = d.replace("i", "l")
-    # Return whichever variant matches a brand
     for brand in BRAND_CANONICAL:
         if brand in d or brand in d2:
-            return brand  # signals a match
+            return brand
     return d
 
 
@@ -66,7 +111,10 @@ def _entropy(text: str) -> float:
     return -sum(p * math.log2(p) for p in freq.values())
 
 
+# ── Main extractor ────────────────────────────────────────────────────────────
+
 def extract(url: str) -> dict:
+    """Return a flat dict of numerical features for the given URL."""
     if not re.match(r"^https?://", url):
         url = "http://" + url
 
@@ -125,4 +173,12 @@ def extract(url: str) -> dict:
     f["url_entropy"]     = round(_entropy(url), 3)
     f["domain_entropy"]  = round(_entropy(domain), 3)
 
+    # ── WHOIS domain age ──────────────────────────────────────────────────────
+    # Trusted domains skip the lookup (saves time, they're safe by definition)
+    if f["is_trusted"]:
+        f["domain_age_days"] = 3650
+    elif os.environ.get("LINKLENS_NO_WHOIS"):
+        f["domain_age_days"] = -1    # skip during training
+    else:
+        f["domain_age_days"] = _whois_age_days(bare)
     return f
