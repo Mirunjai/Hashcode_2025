@@ -1,14 +1,18 @@
 /**
- * Popup.jsx — LinkLens v1.1
+ * Popup.jsx — LinkLens v1.3
  *
- * Opens → immediately shows current tab's result (fetched from background).
- * No manual action needed for the page you're on.
- * URL input still available for scanning any other URL.
+ * Changes from v1.2:
+ *  - Reads OCR result from background via GET_OCR_RESULT message
+ *  - Shows OCR findings in a separate "Page Content Analysis" section
+ *    below the main findings, with its own colour-coded verdict badge
+ *  - Combined threat view: URL score + OCR score shown together
+ *  - QR upload still present and working
  */
 
 import { useEffect, useState, useCallback } from "react";
 
-const API = "http://localhost:8000/analyze";
+const API     = "http://localhost:8000/analyze";
+const QR_API  = "http://localhost:8000/decode-qr";
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 function verdictColor(v) {
@@ -66,7 +70,7 @@ function Bar({ label, value }) {
 
 function Gauge({ score, verdict }) {
   const c = verdictColor(verdict);
-  const r = 44, cx = 56, cy = 56;
+  const r = 44;
   const circ = Math.PI * r;
   const fill = (score / 100) * circ;
   return (
@@ -93,7 +97,6 @@ function Gauge({ score, verdict }) {
   );
 }
 
-// ── Loading skeleton ──────────────────────────────────────────────────────────
 function Scanning({ url }) {
   return (
     <div style={{ textAlign: "center", padding: "24px 0" }}>
@@ -115,113 +118,153 @@ function Scanning({ url }) {
   );
 }
 
+// OCR findings section shown below main findings
+function OcrFindings({ ocr }) {
+  if (!ocr || !ocr.success) return null;
+  const c   = verdictColor(ocr.ocr_verdict);
+  const bgc = ocr.ocr_verdict === "MALICIOUS" ? "rgba(244,63,94,0.06)"
+            : ocr.ocr_verdict === "SUSPICIOUS" ? "rgba(245,158,11,0.06)"
+            : "rgba(34,211,164,0.06)";
+  const bc  = ocr.ocr_verdict === "MALICIOUS" ? "rgba(244,63,94,0.25)"
+            : ocr.ocr_verdict === "SUSPICIOUS" ? "rgba(245,158,11,0.25)"
+            : "rgba(34,211,164,0.25)";
+  return (
+    <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                  background: bgc, border: `1px solid ${bc}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between",
+                    alignItems: "center", marginBottom: 7 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
+                      letterSpacing: "0.08em" }}>
+          PAGE CONTENT
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px",
+                       borderRadius: 10, background: `${c}18`, color: c,
+                       border: `1px solid ${c}30`, letterSpacing: "0.06em" }}>
+          {ocr.ocr_verdict} · {ocr.ocr_score}
+        </span>
+      </div>
+      {ocr.ocr_highlights?.map((h, i) => (
+        <div key={i} style={{ display: "flex", gap: 7, alignItems: "flex-start",
+                              marginBottom: 4 }}>
+          <span style={{ color: c, marginTop: 1, flexShrink: 0, fontSize: 10 }}>›</span>
+          <span style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>{h}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Popup() {
-  const [tabId,    setTabId]    = useState(null);
-  const [tabUrl,   setTabUrl]   = useState("");
-  const [url,      setUrl]      = useState("");
-  const [result,   setResult]   = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const [online,   setOnline]   = useState(true);
-  const [history,  setHistory]  = useState([]);
-  // "tab" = showing current page result | "manual" = user typed a different URL
-  const [mode,     setMode]     = useState("tab");
+  const [tabId,      setTabId]      = useState(null);
+  const [tabUrl,     setTabUrl]     = useState("");
+  const [url,        setUrl]        = useState("");
+  const [result,     setResult]     = useState(null);
+  const [ocrResult,  setOcrResult]  = useState(null);   // NEW: OCR analysis
+  const [scanning,   setScanning]   = useState(false);
+  const [online,     setOnline]     = useState(true);
+  const [history,    setHistory]    = useState([]);
+  const [mode,       setMode]       = useState("tab");
+  const [qrScanning, setQrScanning] = useState(false);
+  const [qrError,    setQrError]    = useState("");
 
-  // ── On mount: get current tab and its background result ───────────────────
+  // ── On mount ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof chrome === "undefined") return;
-
-    // Load history
     chrome.storage.local.get(["history"], (d) => {
       if (d.history) setHistory(d.history);
     });
-
-    // Get active tab
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs?.[0];
       if (!tab) return;
+      setTabId(tab.id);
+      setTabUrl(tab.url || "");
+      setUrl(tab.url || "");
 
-      const id  = tab.id;
-      const raw = tab.url || "";
-      setTabId(id);
-      setTabUrl(raw);
-      setUrl(raw);
-
-      // Ask background for cached result for this tab
-      chrome.runtime.sendMessage({ type: "GET_TAB_RESULT", tabId: id }, (res) => {
+      // Get URL result
+      chrome.runtime.sendMessage({ type: "GET_TAB_RESULT", tabId: tab.id }, (res) => {
         if (res?.result) {
           setResult(res.result);
           setOnline(!res.result.offline);
         } else {
-          // Not cached yet — trigger a scan
-          triggerScan(raw, id);
+          triggerScan(tab.url, tab.id);
         }
+      });
+
+      // Get OCR result (may already be ready if background ran it)
+      chrome.runtime.sendMessage({ type: "GET_OCR_RESULT", tabId: tab.id }, (res) => {
+        if (res?.result) setOcrResult(res.result);
       });
     });
   }, []);
 
-  // ── Scan via background (uses its cache + badge update) ───────────────────
-  const triggerScan = useCallback(async (targetUrl, tid) => {
-    const u = (targetUrl || url).trim();
+  // ── triggerScan ───────────────────────────────────────────────────────────
+  const triggerScan = useCallback((targetUrl, tid) => {
+    const u = (targetUrl || "").trim();
     if (!u || !u.startsWith("http")) return;
     setScanning(true);
-
-    if (typeof chrome !== "undefined" && chrome.runtime) {
-      chrome.runtime.sendMessage(
-        { type: "SCAN", url: u, tabId: tid ?? tabId },
-        (res) => {
-          setScanning(false);
-          if (res?.result) {
-            setResult(res.result);
-            setOnline(!res.result.offline);
-            pushHistory(u, res.result);
-          } else {
-            // API unreachable — local fallback
-            const fb = localScore(u);
-            setResult(fb);
-            setOnline(false);
-            pushHistory(u, fb);
-          }
-        }
-      );
-    } else {
-      // Dev mode (no chrome runtime) — direct fetch
-      try {
-        const r = await fetch(API, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: u }),
-          signal: AbortSignal.timeout(9000),
-        });
-        const data = await r.json();
-        setResult(data);
-        setOnline(true);
-        pushHistory(u, data);
-      } catch {
-        const fb = localScore(u);
-        setResult(fb);
-        setOnline(false);
-        pushHistory(u, fb);
-      } finally {
-        setScanning(false);
+    setOcrResult(null);   // clear old OCR when scanning a new URL
+    chrome.runtime.sendMessage({ type: "SCAN", url: u, tabId: tid }, (res) => {
+      setScanning(false);
+      const r = res?.result || localScore(u);
+      setResult(r);
+      setOnline(!r.offline);
+      // Poll for OCR result — background runs it after the URL scan
+      if (r.verdict !== "SAFE") {
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ type: "GET_OCR_RESULT", tabId: tid }, (ocr) => {
+            if (ocr?.result) setOcrResult(ocr.result);
+          });
+        }, 4000);   // wait 4s for OCR to complete
       }
-    }
-  }, [url, tabId]);
+    });
+  }, []);
 
-  // ── Manual scan from input ────────────────────────────────────────────────
   const handleScan = useCallback(() => {
     setMode("manual");
+    setQrError("");
     triggerScan(url, tabId);
   }, [url, tabId, triggerScan]);
 
-  // ── History push ──────────────────────────────────────────────────────────
-  function pushHistory(u, r) {
-    const item = {
-      url: u.replace(/^https?:\/\//, "").slice(0, 36),
-      ts: Date.now(),
-      score: r.score,
-      verdict: r.verdict,
+  // ── QR upload ─────────────────────────────────────────────────────────────
+  async function handleQRUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQrScanning(true);
+    setQrError("");
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const base64 = ev.target.result.split(",")[1];
+        const res    = await fetch(QR_API, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_base64: base64 }),
+          signal: AbortSignal.timeout(12000),
+        });
+        const data = await res.json();
+        if (!data.success) {
+          setQrError(data.error || "QR decode failed.");
+        } else {
+          setUrl(data.qr_url);
+          setResult(data);
+          setOnline(true);
+          setMode("manual");
+          pushHistory(data.qr_url, data);
+        }
+      } catch {
+        setQrError("QR scan failed — is the backend running?");
+      } finally {
+        setQrScanning(false);
+        e.target.value = "";
+      }
     };
+    reader.readAsDataURL(file);
+  }
+
+  // ── History ───────────────────────────────────────────────────────────────
+  function pushHistory(u, r) {
+    const item = { url: u.replace(/^https?:\/\//, "").slice(0, 36),
+                   ts: Date.now(), score: r.score, verdict: r.verdict };
     setHistory(prev => {
       const next = [item, ...prev.slice(0, 14)];
       if (typeof chrome !== "undefined" && chrome.storage)
@@ -230,28 +273,23 @@ export default function Popup() {
     });
   }
 
-  const vc = result ? verdictColor(result.verdict) : "#38bdf8";
+  const vc           = result ? verdictColor(result.verdict) : "#38bdf8";
   const isCurrentTab = mode === "tab";
 
   return (
-    <div style={{
-      width: 580, fontFamily: "'Inter', system-ui, sans-serif",
-      background: "#0b1422", color: "#e2e8f0", userSelect: "none",
-    }}>
+    <div style={{ width: 580, fontFamily: "'Inter', system-ui, sans-serif",
+                  background: "#0b1422", color: "#e2e8f0", userSelect: "none" }}>
 
-      {/* ── Header ── */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "12px 16px",
-        background: "linear-gradient(90deg,#0f1f33,#0b1a2e)",
-        borderBottom: "1px solid rgba(56,189,248,0.12)",
-      }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 16px",
+                    background: "linear-gradient(90deg,#0f1f33,#0b1a2e)",
+                    borderBottom: "1px solid rgba(56,189,248,0.12)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 7,
-            background: "linear-gradient(135deg,#38bdf8,#2dd4bf)",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14,
-          }}>🔍</div>
+          <div style={{ width: 28, height: 28, borderRadius: 7,
+                        background: "linear-gradient(135deg,#38bdf8,#2dd4bf)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 14 }}>🔍</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700,
                           letterSpacing: "0.05em", color: "#f0f9ff" }}>LinkLens</div>
@@ -262,24 +300,19 @@ export default function Popup() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6,
                       fontSize: 11, color: online ? "#22d3a4" : "#f59e0b" }}>
-          <div style={{
-            width: 7, height: 7, borderRadius: "50%",
-            background: online ? "#22d3a4" : "#f59e0b",
-            boxShadow: `0 0 6px ${online ? "#22d3a4" : "#f59e0b"}`,
-          }} />
+          <div style={{ width: 7, height: 7, borderRadius: "50%",
+                        background: online ? "#22d3a4" : "#f59e0b",
+                        boxShadow: `0 0 6px ${online ? "#22d3a4" : "#f59e0b"}` }} />
           {online ? "API Online" : "Offline"}
         </div>
       </div>
 
-      {/* ── URL bar — shows current tab URL, editable for manual scan ── */}
+      {/* Scan bar */}
       <div style={{ padding: "12px 16px 0", display: "flex", gap: 8, alignItems: "center" }}>
-        {/* Tab indicator pill */}
         {isCurrentTab && tabUrl && (
-          <div style={{
-            fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
-            background: "rgba(56,189,248,0.12)", color: "#38bdf8",
-            letterSpacing: "0.08em", flexShrink: 0, whiteSpace: "nowrap",
-          }}>
+          <div style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4,
+                        background: "rgba(56,189,248,0.12)", color: "#38bdf8",
+                        letterSpacing: "0.08em", flexShrink: 0, whiteSpace: "nowrap" }}>
             CURRENT TAB
           </div>
         )}
@@ -287,80 +320,118 @@ export default function Popup() {
           value={url}
           onChange={e => { setUrl(e.target.value); setMode("manual"); }}
           onKeyDown={e => e.key === "Enter" && handleScan()}
-          placeholder="Or paste any URL to scan…"
-          disabled={scanning}
-          style={{
-            flex: 1, padding: "9px 12px",
-            background: "rgba(255,255,255,0.05)",
-            border: `1px solid ${isCurrentTab ? "rgba(56,189,248,0.3)" : "rgba(56,189,248,0.2)"}`,
-            borderRadius: 8, color: "#e2e8f0",
-            fontSize: 12, fontFamily: "monospace", outline: "none",
-          }}
+          placeholder="Paste a URL to scan…"
+          disabled={scanning || qrScanning}
+          style={{ flex: 1, padding: "9px 12px",
+                   background: "rgba(255,255,255,0.05)",
+                   border: `1px solid ${isCurrentTab ? "rgba(56,189,248,0.3)" : "rgba(56,189,248,0.2)"}`,
+                   borderRadius: 8, color: "#e2e8f0",
+                   fontSize: 12, fontFamily: "monospace", outline: "none" }}
         />
         <button
           onClick={handleScan}
-          disabled={scanning || !url.trim()}
-          style={{
-            padding: "9px 18px", borderRadius: 8, border: "none",
-            background: scanning
-              ? "rgba(56,189,248,0.2)"
-              : "linear-gradient(90deg,#0ea5e9,#14b8a6)",
-            color: "#fff", fontWeight: 600, fontSize: 13,
-            cursor: scanning ? "not-allowed" : "pointer",
-            letterSpacing: "0.04em", whiteSpace: "nowrap",
-          }}
-        >
+          disabled={scanning || qrScanning || !url.trim()}
+          style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                   background: scanning ? "rgba(56,189,248,0.2)"
+                                        : "linear-gradient(90deg,#0ea5e9,#14b8a6)",
+                   color: "#fff", fontWeight: 600, fontSize: 13,
+                   cursor: (scanning || qrScanning) ? "not-allowed" : "pointer",
+                   letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
           {scanning ? "Scanning…" : "Scan"}
         </button>
+
+        {/* QR button */}
+        <label title="Upload a QR code image"
+          style={{ padding: "9px 12px", borderRadius: 8,
+                   cursor: qrScanning ? "not-allowed" : "pointer",
+                   background: qrScanning ? "rgba(56,189,248,0.2)" : "rgba(255,255,255,0.05)",
+                   border: "1px solid rgba(56,189,248,0.2)",
+                   color: qrScanning ? "#38bdf8" : "#94a3b8",
+                   fontSize: 12, whiteSpace: "nowrap",
+                   display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 14 }}>⬡</span>
+          {qrScanning ? "Reading…" : "QR"}
+          <input type="file" accept="image/*" style={{ display: "none" }}
+            onChange={handleQRUpload} disabled={qrScanning || scanning} />
+        </label>
       </div>
 
-      {/* ── Two-column body ── */}
+      {/* QR error */}
+      {qrError && (
+        <div style={{ margin: "6px 16px 0", padding: "7px 12px", borderRadius: 8,
+                      background: "rgba(244,63,94,0.08)",
+                      border: "1px solid rgba(244,63,94,0.25)",
+                      fontSize: 11, color: "#f43f5e" }}>
+          {qrError}
+        </div>
+      )}
+
+      {/* Two-column body */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 16 }}>
 
-        {/* ── Left: gauge + findings ── */}
-        <div style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          borderRadius: 12, padding: 16,
-        }}>
-          {scanning ? (
+        {/* Left: gauge + URL findings + OCR findings */}
+        <div style={{ background: "rgba(255,255,255,0.03)",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: 12, padding: 16 }}>
+          {(scanning || qrScanning) ? (
             <Scanning url={url} />
           ) : result ? (
             <>
               <Gauge score={result.score} verdict={result.verdict} />
               <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "14px 0" }} />
+
+              {/* URL findings label */}
               <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
-                            letterSpacing: "0.08em", marginBottom: 8 }}>FINDINGS</div>
-              {result.highlights.map((h, i) => (
+                            letterSpacing: "0.08em", marginBottom: 8 }}>URL FINDINGS</div>
+
+              {result.highlights?.map((h, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start",
                                       marginBottom: 6 }}>
                   <span style={{ color: vc, marginTop: 1, flexShrink: 0 }}>›</span>
                   <span style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{h}</span>
                 </div>
               ))}
+
+              {/* QR decoded URL badge */}
+              {result.qr_url && (
+                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 6,
+                              background: "rgba(56,189,248,0.08)",
+                              border: "1px solid rgba(56,189,248,0.2)",
+                              fontSize: 10, color: "#38bdf8", fontFamily: "monospace",
+                              wordBreak: "break-all" }}>
+                  QR → {result.qr_url}
+                </div>
+              )}
+
+              {/* OCR findings section — only shows when OCR result is ready */}
+              <OcrFindings ocr={ocrResult} />
+
+              {/* OCR pending indicator */}
+              {!ocrResult && result.verdict !== "SAFE" && (
+                <div style={{ marginTop: 10, fontSize: 10, color: "#334155",
+                              fontStyle: "italic" }}>
+                  Scanning page content…
+                </div>
+              )}
             </>
           ) : (
             <div style={{ textAlign: "center", padding: "28px 0", color: "#334155" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
-              <div style={{ fontSize: 12 }}>Enter a URL above to scan</div>
+              <div style={{ fontSize: 12 }}>Enter a URL or upload a QR image</div>
             </div>
           )}
         </div>
 
-        {/* ── Right: bars + history ── */}
+        {/* Right: bars + history */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-          {/* Risk signal bars */}
-          <div style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 12, padding: 16, flex: 1,
-          }}>
+          <div style={{ background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        borderRadius: 12, padding: 16, flex: 1 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
                           letterSpacing: "0.08em", marginBottom: 12 }}>RISK SIGNALS</div>
             {result?.bars?.length ? (
               result.bars.map(b => <Bar key={b.label} label={b.label} value={b.value} />)
-            ) : scanning ? (
+            ) : (scanning || qrScanning) ? (
               [1,2,3,4].map(i => (
                 <div key={i} style={{ marginBottom: 12 }}>
                   <div style={{ height: 10, borderRadius: 4,
@@ -376,12 +447,9 @@ export default function Popup() {
             )}
           </div>
 
-          {/* Scan history */}
-          <div style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.07)",
-            borderRadius: 12, padding: 16,
-          }}>
+          <div style={{ background: "rgba(255,255,255,0.03)",
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        borderRadius: 12, padding: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
                           letterSpacing: "0.08em", marginBottom: 10 }}>RECENT SCANS</div>
             {history.length === 0 ? (
@@ -389,12 +457,10 @@ export default function Popup() {
             ) : (
               <div style={{ maxHeight: 130, overflowY: "auto" }}>
                 {history.map((h, i) => (
-                  <div key={i} style={{
-                    display: "flex", justifyContent: "space-between",
-                    alignItems: "center", paddingBottom: 6, marginBottom: 6,
-                    borderBottom: i < history.length - 1
-                      ? "1px solid rgba(255,255,255,0.05)" : "none",
-                  }}>
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between",
+                                        alignItems: "center", paddingBottom: 6, marginBottom: 6,
+                                        borderBottom: i < history.length - 1
+                                          ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
                     <div>
                       <div style={{ fontSize: 11, fontFamily: "monospace", color: "#cbd5e1",
                                     maxWidth: 140, overflow: "hidden",
@@ -405,13 +471,12 @@ export default function Popup() {
                         {fmtDate(h.ts)}
                       </div>
                     </div>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                      background: `${verdictColor(h.verdict)}18`,
-                      color: verdictColor(h.verdict),
-                      border: `1px solid ${verdictColor(h.verdict)}30`,
-                      letterSpacing: "0.06em",
-                    }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px",
+                                   borderRadius: 10,
+                                   background: `${verdictColor(h.verdict)}18`,
+                                   color: verdictColor(h.verdict),
+                                   border: `1px solid ${verdictColor(h.verdict)}30`,
+                                   letterSpacing: "0.06em" }}>
                       {h.verdict}
                     </span>
                   </div>
@@ -419,18 +484,19 @@ export default function Popup() {
               </div>
             )}
           </div>
-
         </div>
       </div>
 
-      {/* ── Footer ── */}
-      <div style={{
-        padding: "8px 16px", borderTop: "1px solid rgba(255,255,255,0.05)",
-        display: "flex", justifyContent: "space-between",
-        fontSize: 10, color: "#334155",
-      }}>
-        <span>LinkLens v1.1.0</span>
-        <span>{result?.offline ? "Offline Mode" : "Live Analysis"} · ML-Powered</span>
+      {/* Footer */}
+      <div style={{ padding: "8px 16px", borderTop: "1px solid rgba(255,255,255,0.05)",
+                    display: "flex", justifyContent: "space-between",
+                    fontSize: 10, color: "#334155" }}>
+        <span>LinkLens v1.3.0</span>
+        <span>
+          {result?.offline ? "Offline Mode" : result?.qr_url ? "QR Scan" : "Live Analysis"}
+          {ocrResult?.success ? " · OCR Active" : ""}
+          {" · ML-Powered"}
+        </span>
       </div>
 
     </div>
