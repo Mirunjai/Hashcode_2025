@@ -23,8 +23,8 @@ function cached(url) {
 
 async function scan(url) {
   // Skip internal / extension pages
-  if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
-  if (url.startsWith("chrome") || url.includes("localhost")) return null;
+  if (!url || !url.startsWith("http")) return null;
+  if (url.includes("localhost") || url.includes("127.0.0.1")) return null;
 
   const hit = cached(url);
   if (hit) return hit;

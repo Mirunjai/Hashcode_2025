@@ -10,13 +10,24 @@ from urllib.parse import urlparse
 
 
 TRUSTED = {
-    "google.com", "github.com", "microsoft.com", "apple.com", "amazon.com",
-    "paypal.com", "facebook.com", "youtube.com", "wikipedia.org", "reddit.com",
-    "twitter.com", "instagram.com", "linkedin.com", "netflix.com", "bbc.com",
+    # Core Google
+    "google.com", "drive.google.com", "docs.google.com", "mail.google.com",
+    "sheets.google.com", "calendar.google.com", "meet.google.com",
+    "maps.google.com", "photos.google.com",
+    # Big tech
+    "github.com", "microsoft.com", "apple.com", "amazon.com",
+    "paypal.com", "facebook.com", "youtube.com", "wikipedia.org",
+    "reddit.com", "twitter.com", "instagram.com", "linkedin.com",
+    "netflix.com", "bbc.com", "discord.com", "twitch.tv",
+    # AI tools
+    "claude.ai", "chatgpt.com", "chat.openai.com", "openai.com",
+    "gemini.google.com", "copilot.microsoft.com",
+    # Dev tools
     "nodejs.org", "npmjs.com", "pypi.org", "docs.python.org",
     "developer.mozilla.org", "stackoverflow.com", "cloudflare.com",
     "fastapi.tiangolo.com", "reactjs.org", "vitejs.dev",
     "docs.github.com", "learn.microsoft.com", "support.apple.com",
+    "vercel.app", "netlify.app", "figma.com", "notion.so",
 }
 
 RISKY_TLDS = {".tk", ".ml", ".ga", ".cf", ".gq", ".xyz", ".top", ".loan", ".club"}
@@ -39,6 +50,12 @@ def _normalise(domain: str) -> str:
     """Apply single-char and multi-char lookalike substitutions."""
     d = domain.translate(_CHAR_MAP)
     d = d.replace("rn", "m").replace("vv", "w").replace("cl", "d")
+    # Also try i→l substitution (capital I lowercases to i, fooling google→googie)
+    d2 = d.replace("i", "l")
+    # Return whichever variant matches a brand
+    for brand in BRAND_CANONICAL:
+        if brand in d or brand in d2:
+            return brand  # signals a match
     return d
 
 
@@ -100,7 +117,7 @@ def extract(url: str) -> dict:
         f["has_brand"] and not any(b in bare for b in brand_words)
     ) else 0
     f["homoglyph_spoof"] = 1 if (
-        any(b in normalised for b in BRAND_CANONICAL)
+        any(b == normalised for b in BRAND_CANONICAL)
         and not any(b in bare for b in BRAND_CANONICAL)
     ) else 0
 
