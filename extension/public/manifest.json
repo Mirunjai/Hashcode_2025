@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkLens",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "description": "Instant ML-powered phishing detection for every URL you visit.",
 
   "action": {
@@ -13,14 +13,24 @@
     "service_worker": "background.js"
   },
 
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+
   "permissions": [
     "tabs",
     "activeTab",
     "storage",
-    "notifications"
+    "notifications",
+    "scripting"
   ],
 
   "host_permissions": [
-    "http://localhost:8000/*"
+    "http://localhost:8000/*",
+    "<all_urls>"
   ]
 }
