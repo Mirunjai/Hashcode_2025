@@ -1,20 +1,19 @@
 /**
- * Popup.jsx — LinkLens v1.3
+ * Popup.jsx — LinkLens v1.6
  *
- * Changes from v1.2:
- *  - Reads OCR result from background via GET_OCR_RESULT message
- *  - Shows OCR findings in a separate "Page Content Analysis" section
- *    below the main findings, with its own colour-coded verdict badge
- *  - Combined threat view: URL score + OCR score shown together
- *  - QR upload still present and working
+ * Changes from v1.5:
+ *  - New 4-layer scoreboard replacing the old single gauge
+ *  - Shows URL, OCR, DOM, and WHOIS as separate scored rows
+ *  - Combined score computed server-side from all layers
+ *  - Listens for RESULT_UPDATED message from background
+ *  - WHOIS status shown explicitly (working/failed/age)
  */
 
 import { useEffect, useState, useCallback } from "react";
 
-const API     = "http://localhost:8000/analyze";
-const QR_API  = "http://localhost:8000/decode-qr";
+const API    = "http://localhost:8000/analyze";
+const QR_API = "http://localhost:8000/decode-qr";
 
-// ── Colour helpers ────────────────────────────────────────────────────────────
 function verdictColor(v) {
   if (v === "MALICIOUS")  return "#f43f5e";
   if (v === "SUSPICIOUS") return "#f59e0b";
@@ -29,8 +28,6 @@ function scoreColor(n) {
 function fmtDate(ts) {
   return new Date(ts).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
-
-// ── Offline fallback ──────────────────────────────────────────────────────────
 function localScore(url) {
   let s = 0;
   if (!url.startsWith("https://")) s += 20;
@@ -40,11 +37,9 @@ function localScore(url) {
   if (/\.(tk|ml|ga|cf|gq|xyz|top|loan)/.test(url)) s += 25;
   s = Math.min(s, 100);
   const v = s >= 70 ? "MALICIOUS" : s >= 30 ? "SUSPICIOUS" : "SAFE";
-  return {
-    score: s, verdict: v, confidence: s / 100,
-    highlights: ["Offline — backend unreachable. Pattern-based result only."],
-    bars: [], offline: true,
-  };
+  return { score: s, verdict: v, confidence: s / 100,
+           highlights: ["Offline — backend unreachable. Pattern-based result only."],
+           bars: [], offline: true };
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -58,40 +53,9 @@ function Bar({ label, value }) {
         <span style={{ color: c, fontVariantNumeric: "tabular-nums" }}>{value}</span>
       </div>
       <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.06)" }}>
-        <div style={{
-          height: "100%", borderRadius: 3, width: `${value}%`,
-          background: `linear-gradient(90deg,${c}66,${c})`,
-          transition: "width .5s cubic-bezier(.22,1,.36,1)",
-        }} />
-      </div>
-    </div>
-  );
-}
-
-function Gauge({ score, verdict }) {
-  const c = verdictColor(verdict);
-  const r = 44;
-  const circ = Math.PI * r;
-  const fill = (score / 100) * circ;
-  return (
-    <div style={{ textAlign: "center" }}>
-      <svg width="112" height="70" viewBox="0 0 112 70">
-        <path d={`M 12,56 A ${r},${r} 0 0 1 100,56`}
-          fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="10" strokeLinecap="round" />
-        <path d={`M 12,56 A ${r},${r} 0 0 1 100,56`}
-          fill="none" stroke={c} strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={`${fill} ${circ}`}
-          style={{ transition: "stroke-dasharray .6s cubic-bezier(.22,1,.36,1)" }} />
-      </svg>
-      <div style={{ marginTop: -8 }}>
-        <div style={{ fontSize: 32, fontWeight: 700,
-                      fontVariantNumeric: "tabular-nums", color: "#f8fafc" }}>
-          {score}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.1em",
-                      color: c, marginTop: 2 }}>
-          {verdict}
-        </div>
+        <div style={{ height: "100%", borderRadius: 3, width: `${value}%`,
+                      background: `linear-gradient(90deg,${c}66,${c})`,
+                      transition: "width .5s cubic-bezier(.22,1,.36,1)" }} />
       </div>
     </div>
   );
@@ -100,13 +64,10 @@ function Gauge({ score, verdict }) {
 function Scanning({ url }) {
   return (
     <div style={{ textAlign: "center", padding: "24px 0" }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: "50%",
-        border: "3px solid rgba(56,189,248,0.15)",
-        borderTopColor: "#38bdf8",
-        margin: "0 auto 12px",
-        animation: "spin 0.8s linear infinite",
-      }} />
+      <div style={{ width: 36, height: 36, borderRadius: "50%",
+                    border: "3px solid rgba(56,189,248,0.15)",
+                    borderTopColor: "#38bdf8", margin: "0 auto 12px",
+                    animation: "spin 0.8s linear infinite" }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ fontSize: 12, color: "#475569" }}>Scanning</div>
       <div style={{ fontSize: 11, color: "#334155", fontFamily: "monospace",
@@ -118,57 +79,177 @@ function Scanning({ url }) {
   );
 }
 
-// OCR findings section shown below main findings
-function OcrFindings({ ocr }) {
-  if (!ocr || !ocr.success) return null;
-  const c   = verdictColor(ocr.ocr_verdict);
-  const bgc = ocr.ocr_verdict === "MALICIOUS" ? "rgba(244,63,94,0.06)"
-            : ocr.ocr_verdict === "SUSPICIOUS" ? "rgba(245,158,11,0.06)"
-            : "rgba(34,211,164,0.06)";
-  const bc  = ocr.ocr_verdict === "MALICIOUS" ? "rgba(244,63,94,0.25)"
-            : ocr.ocr_verdict === "SUSPICIOUS" ? "rgba(245,158,11,0.25)"
-            : "rgba(34,211,164,0.25)";
+// ── 4-layer scoreboard ────────────────────────────────────────────────────────
+function Scoreboard({ result, ocrResult, pageResult }) {
+  if (!result) return null;
+
+  const layers = result.layers || {};
+  const whois  = result.whois  || {};
+
+  // Final combined score — big gauge
+  const vc    = verdictColor(result.verdict);
+  const r     = 44, circ = Math.PI * r;
+  const fill  = (result.score / 100) * circ;
+
+  // Layer rows
+  const rows = [
+    {
+      key:     "url",
+      label:   "URL Analysis",
+      icon:    "🔗",
+      score:   layers.url?.score ?? result.url_score ?? result.score,
+      verdict: layers.url?.verdict ?? result.verdict,
+      weight:  "60%",
+      detail:  result.highlights?.[0] || "",
+    },
+    {
+      key:     "ocr",
+      label:   "Page Content (OCR)",
+      icon:    "👁",
+      score:   ocrResult?.ocr_score ?? layers.ocr?.score,
+      verdict: ocrResult?.ocr_verdict ?? layers.ocr?.verdict ?? "PENDING",
+      weight:  "25%",
+      detail:  ocrResult?.ocr_highlights?.[0] || (ocrResult ? "" : "Scanning…"),
+    },
+    {
+      key:     "dom",
+      label:   "Page Structure (DOM)",
+      icon:    "🏗",
+      score:   pageResult?.page_score ?? layers.dom?.score,
+      verdict: pageResult?.page_verdict ?? layers.dom?.verdict ?? "PENDING",
+      weight:  "15%",
+      detail:  pageResult?.page_highlights?.[0] || (pageResult ? "" : "Checking…"),
+    },
+  ];
+
   return (
-    <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8,
-                  background: bgc, border: `1px solid ${bc}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between",
-                    alignItems: "center", marginBottom: 7 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
-                      letterSpacing: "0.08em" }}>
-          PAGE CONTENT
+    <div>
+      {/* Combined score gauge */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16,
+                    paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    marginBottom: 14 }}>
+        <div style={{ textAlign: "center", flexShrink: 0 }}>
+          <svg width="90" height="56" viewBox="0 0 112 70">
+            <path d={`M 12,56 A ${r},${r} 0 0 1 100,56`}
+              fill="none" stroke="rgba(255,255,255,0.07)"
+              strokeWidth="10" strokeLinecap="round" />
+            <path d={`M 12,56 A ${r},${r} 0 0 1 100,56`}
+              fill="none" stroke={vc} strokeWidth="10" strokeLinecap="round"
+              strokeDasharray={`${fill} ${circ}`}
+              style={{ transition: "stroke-dasharray .6s cubic-bezier(.22,1,.36,1)" }} />
+          </svg>
+          <div style={{ marginTop: -6 }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: "#f8fafc",
+                          fontVariantNumeric: "tabular-nums" }}>{result.score}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: vc,
+                          letterSpacing: "0.1em" }}>{result.verdict}</div>
+          </div>
         </div>
-        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px",
-                       borderRadius: 10, background: `${c}18`, color: c,
-                       border: `1px solid ${c}30`, letterSpacing: "0.06em" }}>
-          {ocr.ocr_verdict} · {ocr.ocr_score}
-        </span>
+
+        {/* WHOIS status */}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "#475569",
+                        letterSpacing: "0.08em", marginBottom: 6 }}>DOMAIN INFO</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+              background: whois.status === "old"     ? "#22d3a4"
+                        : whois.status === "trusted" ? "#38bdf8"
+                        : whois.status === "failed"  ? "#64748b"
+                        : whois.status === "new"     ? "#f43f5e"
+                        : "#f59e0b",
+            }} />
+            <span style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.4 }}>
+              {whois.label || "WHOIS unknown"}
+            </span>
+          </div>
+          {result.confidence !== undefined && (
+            <div style={{ marginTop: 6, fontSize: 10, color: "#475569" }}>
+              ML confidence: {Math.round(result.confidence * 100)}%
+              {result.ocr_applied || result.dom_applied
+                ? " · Combined score"
+                : " · URL score only"}
+            </div>
+          )}
+        </div>
       </div>
-      {ocr.ocr_highlights?.map((h, i) => (
-        <div key={i} style={{ display: "flex", gap: 7, alignItems: "flex-start",
-                              marginBottom: 4 }}>
-          <span style={{ color: c, marginTop: 1, flexShrink: 0, fontSize: 10 }}>›</span>
-          <span style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>{h}</span>
+
+      {/* Layer rows */}
+      <div style={{ fontSize: 10, fontWeight: 600, color: "#475569",
+                    letterSpacing: "0.08em", marginBottom: 8 }}>
+        DETECTION LAYERS
+      </div>
+      {rows.map(row => {
+        const hasScore  = row.score !== null && row.score !== undefined;
+        const isPending = row.verdict === "PENDING" || row.verdict === "UNKNOWN";
+        const c = isPending ? "#475569" : verdictColor(row.verdict);
+        const bgc = isPending ? "rgba(71,85,105,0.08)"
+                  : row.verdict === "MALICIOUS"  ? "rgba(244,63,94,0.06)"
+                  : row.verdict === "SUSPICIOUS" ? "rgba(245,158,11,0.06)"
+                  : "rgba(34,211,164,0.06)";
+        return (
+          <div key={row.key} style={{ display: "flex", gap: 10, alignItems: "flex-start",
+                                      padding: "8px 10px", borderRadius: 8,
+                                      background: bgc, marginBottom: 6,
+                                      border: `1px solid ${c}22` }}>
+            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{row.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between",
+                            alignItems: "center", marginBottom: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#cbd5e1" }}>
+                  {row.label}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ fontSize: 9, color: "#475569" }}>{row.weight}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px",
+                                 borderRadius: 10, background: `${c}18`, color: c,
+                                 border: `1px solid ${c}30`, letterSpacing: "0.06em",
+                                 whiteSpace: "nowrap" }}>
+                    {isPending ? "…" : `${row.verdict} · ${hasScore ? row.score : "?"}`}
+                  </span>
+                </div>
+              </div>
+              {row.detail && (
+                <div style={{ fontSize: 10, color: "#64748b", lineHeight: 1.4,
+                              overflow: "hidden", textOverflow: "ellipsis",
+                              whiteSpace: "nowrap" }}>
+                  {row.detail}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* QR decoded URL badge */}
+      {result.qr_url && (
+        <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 6,
+                      background: "rgba(56,189,248,0.08)",
+                      border: "1px solid rgba(56,189,248,0.2)",
+                      fontSize: 10, color: "#38bdf8", fontFamily: "monospace",
+                      wordBreak: "break-all" }}>
+          QR → {result.qr_url}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function Popup() {
-  const [tabId,      setTabId]      = useState(null);
-  const [tabUrl,     setTabUrl]     = useState("");
-  const [url,        setUrl]        = useState("");
-  const [result,     setResult]     = useState(null);
-  const [ocrResult,  setOcrResult]  = useState(null);   // NEW: OCR analysis
-  const [scanning,   setScanning]   = useState(false);
-  const [online,     setOnline]     = useState(true);
-  const [history,    setHistory]    = useState([]);
-  const [mode,       setMode]       = useState("tab");
-  const [qrScanning, setQrScanning] = useState(false);
-  const [qrError,    setQrError]    = useState("");
+  const [tabId,       setTabId]       = useState(null);
+  const [tabUrl,      setTabUrl]      = useState("");
+  const [url,         setUrl]         = useState("");
+  const [result,      setResult]      = useState(null);
+  const [ocrResult,   setOcrResult]   = useState(null);
+  const [pageResult,  setPageResult]  = useState(null);
+  const [scanning,    setScanning]    = useState(false);
+  const [online,      setOnline]      = useState(true);
+  const [history,     setHistory]     = useState([]);
+  const [mode,        setMode]        = useState("tab");
+  const [qrScanning,  setQrScanning]  = useState(false);
+  const [qrError,     setQrError]     = useState("");
 
-  // ── On mount ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof chrome === "undefined") return;
     chrome.storage.local.get(["history"], (d) => {
@@ -180,58 +261,57 @@ export default function Popup() {
       setTabId(tab.id);
       setTabUrl(tab.url || "");
       setUrl(tab.url || "");
-
-      // Get URL result
-      chrome.runtime.sendMessage({ type: "GET_TAB_RESULT", tabId: tab.id }, (res) => {
-        if (res?.result) {
-          setResult(res.result);
-          setOnline(!res.result.offline);
-        } else {
-          triggerScan(tab.url, tab.id);
-        }
-      });
-
-      // Get OCR result (may already be ready if background ran it)
-      chrome.runtime.sendMessage({ type: "GET_OCR_RESULT", tabId: tab.id }, (res) => {
-        if (res?.result) setOcrResult(res.result);
-      });
+      chrome.runtime.sendMessage({ type: "GET_TAB_RESULT",  tabId: tab.id },
+        (res) => { if (res?.result) { setResult(res.result); setOnline(!res.result.offline); }
+                   else triggerScan(tab.url, tab.id); });
+      chrome.runtime.sendMessage({ type: "GET_OCR_RESULT",  tabId: tab.id },
+        (res) => { if (res?.result) setOcrResult(res.result); });
+      chrome.runtime.sendMessage({ type: "GET_PAGE_RESULT", tabId: tab.id },
+        (res) => { if (res?.result) setPageResult(res.result); });
     });
+
+    // Listen for background pushing a combined result update
+    const handler = (msg) => {
+      if (msg.type === "RESULT_UPDATED" && msg.result) {
+        setResult(msg.result);
+        setOnline(!msg.result.offline);
+      }
+    };
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
-  // ── triggerScan ───────────────────────────────────────────────────────────
   const triggerScan = useCallback((targetUrl, tid) => {
     const u = (targetUrl || "").trim();
     if (!u || !u.startsWith("http")) return;
     setScanning(true);
-    setOcrResult(null);   // clear old OCR when scanning a new URL
+    setOcrResult(null);
+    setPageResult(null);
     chrome.runtime.sendMessage({ type: "SCAN", url: u, tabId: tid }, (res) => {
       setScanning(false);
       const r = res?.result || localScore(u);
       setResult(r);
       setOnline(!r.offline);
-      // Poll for OCR result — background runs it after the URL scan
       if (r.verdict !== "SAFE") {
         setTimeout(() => {
-          chrome.runtime.sendMessage({ type: "GET_OCR_RESULT", tabId: tid }, (ocr) => {
-            if (ocr?.result) setOcrResult(ocr.result);
-          });
-        }, 4000);   // wait 4s for OCR to complete
+          chrome.runtime.sendMessage({ type: "GET_OCR_RESULT",  tabId: tid },
+            (ocr) => { if (ocr?.result) setOcrResult(ocr.result); });
+          chrome.runtime.sendMessage({ type: "GET_PAGE_RESULT", tabId: tid },
+            (pg)  => { if (pg?.result)  setPageResult(pg.result); });
+        }, 5000);
       }
     });
   }, []);
 
   const handleScan = useCallback(() => {
-    setMode("manual");
-    setQrError("");
+    setMode("manual"); setQrError("");
     triggerScan(url, tabId);
   }, [url, tabId, triggerScan]);
 
-  // ── QR upload ─────────────────────────────────────────────────────────────
   async function handleQRUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setQrScanning(true);
-    setQrError("");
+    setQrScanning(true); setQrError("");
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try {
@@ -242,26 +322,15 @@ export default function Popup() {
           signal: AbortSignal.timeout(12000),
         });
         const data = await res.json();
-        if (!data.success) {
-          setQrError(data.error || "QR decode failed.");
-        } else {
-          setUrl(data.qr_url);
-          setResult(data);
-          setOnline(true);
-          setMode("manual");
-          pushHistory(data.qr_url, data);
-        }
-      } catch {
-        setQrError("QR scan failed — is the backend running?");
-      } finally {
-        setQrScanning(false);
-        e.target.value = "";
-      }
+        if (!data.success) { setQrError(data.error || "QR decode failed."); }
+        else { setUrl(data.qr_url); setResult(data); setOnline(true);
+               setMode("manual"); pushHistory(data.qr_url, data); }
+      } catch { setQrError("QR scan failed — is the backend running?"); }
+      finally { setQrScanning(false); e.target.value = ""; }
     };
     reader.readAsDataURL(file);
   }
 
-  // ── History ───────────────────────────────────────────────────────────────
   function pushHistory(u, r) {
     const item = { url: u.replace(/^https?:\/\//, "").slice(0, 36),
                    ts: Date.now(), score: r.score, verdict: r.verdict };
@@ -273,7 +342,6 @@ export default function Popup() {
     });
   }
 
-  const vc           = result ? verdictColor(result.verdict) : "#38bdf8";
   const isCurrentTab = mode === "tab";
 
   return (
@@ -288,8 +356,8 @@ export default function Popup() {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: 7,
                         background: "linear-gradient(135deg,#38bdf8,#2dd4bf)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 14 }}>🔍</div>
+                        display: "flex", alignItems: "center",
+                        justifyContent: "center", fontSize: 14 }}>🔍</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700,
                           letterSpacing: "0.05em", color: "#f0f9ff" }}>LinkLens</div>
@@ -316,8 +384,7 @@ export default function Popup() {
             CURRENT TAB
           </div>
         )}
-        <input
-          value={url}
+        <input value={url}
           onChange={e => { setUrl(e.target.value); setMode("manual"); }}
           onKeyDown={e => e.key === "Enter" && handleScan()}
           placeholder="Paste a URL to scan…"
@@ -326,10 +393,8 @@ export default function Popup() {
                    background: "rgba(255,255,255,0.05)",
                    border: `1px solid ${isCurrentTab ? "rgba(56,189,248,0.3)" : "rgba(56,189,248,0.2)"}`,
                    borderRadius: 8, color: "#e2e8f0",
-                   fontSize: 12, fontFamily: "monospace", outline: "none" }}
-        />
-        <button
-          onClick={handleScan}
+                   fontSize: 12, fontFamily: "monospace", outline: "none" }} />
+        <button onClick={handleScan}
           disabled={scanning || qrScanning || !url.trim()}
           style={{ padding: "9px 18px", borderRadius: 8, border: "none",
                    background: scanning ? "rgba(56,189,248,0.2)"
@@ -339,8 +404,6 @@ export default function Popup() {
                    letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
           {scanning ? "Scanning…" : "Scan"}
         </button>
-
-        {/* QR button */}
         <label title="Upload a QR code image"
           style={{ padding: "9px 12px", borderRadius: 8,
                    cursor: qrScanning ? "not-allowed" : "pointer",
@@ -356,64 +419,28 @@ export default function Popup() {
         </label>
       </div>
 
-      {/* QR error */}
       {qrError && (
         <div style={{ margin: "6px 16px 0", padding: "7px 12px", borderRadius: 8,
                       background: "rgba(244,63,94,0.08)",
                       border: "1px solid rgba(244,63,94,0.25)",
-                      fontSize: 11, color: "#f43f5e" }}>
-          {qrError}
-        </div>
+                      fontSize: 11, color: "#f43f5e" }}>{qrError}</div>
       )}
 
       {/* Two-column body */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 16 }}>
 
-        {/* Left: gauge + URL findings + OCR findings */}
+        {/* Left: scoreboard */}
         <div style={{ background: "rgba(255,255,255,0.03)",
                       border: "1px solid rgba(255,255,255,0.07)",
                       borderRadius: 12, padding: 16 }}>
           {(scanning || qrScanning) ? (
             <Scanning url={url} />
           ) : result ? (
-            <>
-              <Gauge score={result.score} verdict={result.verdict} />
-              <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "14px 0" }} />
-
-              {/* URL findings label */}
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b",
-                            letterSpacing: "0.08em", marginBottom: 8 }}>URL FINDINGS</div>
-
-              {result.highlights?.map((h, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start",
-                                      marginBottom: 6 }}>
-                  <span style={{ color: vc, marginTop: 1, flexShrink: 0 }}>›</span>
-                  <span style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>{h}</span>
-                </div>
-              ))}
-
-              {/* QR decoded URL badge */}
-              {result.qr_url && (
-                <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 6,
-                              background: "rgba(56,189,248,0.08)",
-                              border: "1px solid rgba(56,189,248,0.2)",
-                              fontSize: 10, color: "#38bdf8", fontFamily: "monospace",
-                              wordBreak: "break-all" }}>
-                  QR → {result.qr_url}
-                </div>
-              )}
-
-              {/* OCR findings section — only shows when OCR result is ready */}
-              <OcrFindings ocr={ocrResult} />
-
-              {/* OCR pending indicator */}
-              {!ocrResult && result.verdict !== "SAFE" && (
-                <div style={{ marginTop: 10, fontSize: 10, color: "#334155",
-                              fontStyle: "italic" }}>
-                  Scanning page content…
-                </div>
-              )}
-            </>
+            <Scoreboard
+              result={result}
+              ocrResult={ocrResult}
+              pageResult={pageResult}
+            />
           ) : (
             <div style={{ textAlign: "center", padding: "28px 0", color: "#334155" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
@@ -422,7 +449,7 @@ export default function Popup() {
           )}
         </div>
 
-        {/* Right: bars + history */}
+        {/* Right: risk signal bars + history */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ background: "rgba(255,255,255,0.03)",
                         border: "1px solid rgba(255,255,255,0.07)",
@@ -434,8 +461,8 @@ export default function Popup() {
             ) : (scanning || qrScanning) ? (
               [1,2,3,4].map(i => (
                 <div key={i} style={{ marginBottom: 12 }}>
-                  <div style={{ height: 10, borderRadius: 4,
-                                background: "rgba(255,255,255,0.04)", marginBottom: 6,
+                  <div style={{ height: 10, borderRadius: 4, marginBottom: 6,
+                                background: "rgba(255,255,255,0.04)",
                                 width: `${60 + i * 10}%` }} />
                   <div style={{ height: 6, borderRadius: 3,
                                 background: "rgba(255,255,255,0.04)" }} />
@@ -491,11 +518,13 @@ export default function Popup() {
       <div style={{ padding: "8px 16px", borderTop: "1px solid rgba(255,255,255,0.05)",
                     display: "flex", justifyContent: "space-between",
                     fontSize: 10, color: "#334155" }}>
-        <span>LinkLens v1.3.0</span>
+        <span>LinkLens v1.6.0</span>
         <span>
-          {result?.offline ? "Offline Mode" : result?.qr_url ? "QR Scan" : "Live Analysis"}
-          {ocrResult?.success ? " · OCR Active" : ""}
-          {" · ML-Powered"}
+          {result?.offline ? "Offline" : result?.qr_url ? "QR Scan" : "Live"}
+          {" · URL"}
+          {ocrResult?.success  ? " · OCR"  : ""}
+          {pageResult?.success ? " · DOM"  : ""}
+          {result?.whois?.status === "old" || result?.whois?.status === "trusted" ? " · WHOIS ✓" : " · WHOIS ?"}
         </span>
       </div>
 

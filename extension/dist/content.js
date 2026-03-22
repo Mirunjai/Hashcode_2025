@@ -11,17 +11,18 @@
  */
 
 (function () {
-  // Track URLs the user has chosen to proceed on — don't re-block them
   const proceeded = new Set();
 
-  // ── Inject the block overlay ────────────────────────────────────────────────
   function showBlockPage(data) {
     const { score, url, highlights } = data;
 
     if (proceeded.has(url)) return;
 
-    // Freeze the page scroll while overlay is showing
     document.documentElement.style.overflow = "hidden";
+    document.body && (document.body.style.overflow = "hidden");
+
+    const existing = document.getElementById("linklens-block-overlay");
+    if (existing) existing.remove();
 
     const overlay = document.createElement("div");
     overlay.id = "linklens-block-overlay";
@@ -38,7 +39,6 @@
       color: #e2e8f0;
     `;
 
-    // Build highlights list HTML
     const highlightItems = (highlights || [])
       .map(h => `<li style="margin-bottom:6px;color:#94a3b8;font-size:13px;line-height:1.5;">${h}</li>`)
       .join("");
@@ -54,8 +54,6 @@
         text-align: center;
         box-shadow: 0 0 80px rgba(244,63,94,0.15);
       ">
-
-        <!-- Shield icon -->
         <div style="
           width: 64px; height: 64px;
           border-radius: 50%;
@@ -66,12 +64,10 @@
           font-size: 28px;
         ">🛡️</div>
 
-        <!-- Title -->
         <div style="font-size:22px;font-weight:700;color:#f43f5e;letter-spacing:0.02em;margin-bottom:8px;">
           Threat Detected
         </div>
 
-        <!-- Score badge -->
         <div style="
           display:inline-block;
           background:rgba(244,63,94,0.12);
@@ -85,7 +81,6 @@
           margin-bottom:20px;
         ">MALICIOUS · ${score}/100</div>
 
-        <!-- URL -->
         <div style="
           background:#0b1422;
           border:1px solid rgba(255,255,255,0.08);
@@ -99,20 +94,16 @@
           text-align:left;
         ">${url}</div>
 
-        <!-- Findings -->
         ${highlightItems ? `
         <ul style="text-align:left;padding-left:18px;margin-bottom:24px;list-style:disc;">
           ${highlightItems}
         </ul>` : ""}
 
-        <!-- Branding -->
         <div style="font-size:11px;color:#334155;margin-bottom:28px;letter-spacing:0.06em;">
           🔍 LINKLENS · ML-POWERED PHISHING DETECTION
         </div>
 
-        <!-- Buttons -->
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-
           <button id="ll-go-back" style="
             padding:11px 24px;
             border-radius:8px;
@@ -134,7 +125,6 @@
             font-size:13px;
             cursor:pointer;
           ">Proceed anyway (unsafe)</button>
-
         </div>
 
         <div style="font-size:11px;color:#1e293b;margin-top:16px;">
@@ -145,38 +135,39 @@
 
     document.documentElement.appendChild(overlay);
 
-    // Go back button
+    // ── Go back safely ────────────────────────────────────────────────────────
     document.getElementById("ll-go-back").addEventListener("click", () => {
       if (history.length > 1) {
         history.back();
       } else {
-        // No history — redirect to Chrome's new tab page
-        window.location.href = "chrome://newtab";
+        window.location.replace("https://www.google.com");
       }
     });
 
-    // Proceed button — remove overlay and remember choice
+    // ── Proceed anyway ────────────────────────────────────────────────────────
     document.getElementById("ll-proceed").addEventListener("click", () => {
       proceeded.add(url);
       const el = document.getElementById("linklens-block-overlay");
-      if (el) el.remove();
+      if (el) {
+        el.style.display = "none";
+        el.remove();
+      }
       document.documentElement.style.overflow = "";
+      if (document.body) document.body.style.overflow = "";
     });
   }
 
-  // ── Remove overlay if it exists ────────────────────────────────────────────
   function hideBlockPage() {
     const existing = document.getElementById("linklens-block-overlay");
     if (existing) {
       existing.remove();
       document.documentElement.style.overflow = "";
+      if (document.body) document.body.style.overflow = "";
     }
   }
 
-  // ── Listen for messages from background.js ─────────────────────────────────
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "BLOCK_PAGE") {
-      // Wait for body to exist if document_start fires very early
       if (document.documentElement) {
         showBlockPage(msg);
       } else {

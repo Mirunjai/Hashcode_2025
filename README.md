@@ -1,8 +1,178 @@
-# 🔍 LinkLens
+<div align="center">
 
-> Instant, ML-powered phishing detection as a Chrome extension.
+<img src="extension/public/icon.svg" width="64" height="64" alt="LinkLens logo" />
 
-LinkLens scans every URL you visit — or any URL you paste — and gives you a threat score in under a second. It runs a trained Random Forest model on 26 URL-level signals with no external dependencies and no data leaving your machine.
+# LinkLens
+
+**ML-powered phishing detection for every URL you visit**
+
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://python.org)
+[![XGBoost](https://img.shields.io/badge/Model-XGBoost-orange)](https://xgboost.readthedocs.io)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+> Originally built at **Hashcode 2025** hackathon. Rebuilt from the ground up as a complete, production-quality phishing detection system.
+
+</div>
+
+---
+
+## What it does
+
+LinkLens is a Chrome extension backed by a local ML API. Every URL you visit is analysed in real time across **four detection layers**:
+
+| Layer | What it checks |
+|---|---|
+| **ML URL Analysis** | 27 structural URL signals — entropy, homoglyphs, brand spoofing, domain age |
+| **QR Decoding** | Decodes QR codes from uploaded images or live page `<img>` tags |
+| **OCR Content** | Screenshots the page and scans visible text for phishing phrases |
+| **DOM Structure** | Fetches the live page and checks for external form targets, hidden iframes, credential fields |
+
+If a threat is detected, a full-screen block page intercepts navigation before the page renders.
+
+---
+
+## Demo
+
+> *(Screen recording coming soon)*
+
+**Test cases from live usage:**
+
+| URL | Score | Verdict | Why |
+|---|---|---|---|
+| `googIe.com` | 80 | MALICIOUS | Capital I homoglyph |
+| `arnazon.com` | 80 | MALICIOUS | `rn→m` typosquat |
+| `secure-paypal-verify.com` | 98 | MALICIOUS | Phishing keywords |
+| `login.microsoft.com.secure.net` | 66 | SUSPICIOUS | Brand in subdomain |
+| `drive.google.com` | 0 | SAFE | Trusted domain |
+| `claude.ai` | 0 | SAFE | Trusted domain |
+
+---
+
+## Model Performance
+
+Trained with **XGBoost** on 32,433 URLs from PhishTank, OpenPhish, and Majestic Million.
+
+```
+Test accuracy       97.4%
+False positives     77 / 6,487 test URLs
+False negatives     90 / 6,487 test URLs
+Training time       13.5 seconds
+Features            27 URL signals
+```
+
+**Top features by importance:**
+```
+domain_age_days     0.2317  ██████████████████████████
+path_len            0.1628  ██████████████████
+is_trusted          0.1330  ███████████████
+url_len             0.1084  ████████████
+n_digits            0.0564  ██████
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Chrome Extension                    │
+│  ┌──────────┐  ┌────────────┐  ┌─────────────────┐  │
+│  │ Popup.jsx│  │background  │  │  content.js     │  │
+│  │ (React)  │  │.js (SW)    │  │  (block page)   │  │
+│  └────┬─────┘  └─────┬──────┘  └─────────────────┘  │
+└───────┼──────────────┼─────────────────────────────-─┘
+        │              │  HTTP (localhost:8000)
+        ▼              ▼
+┌─────────────────────────────────────────────────────┐
+│               FastAPI Backend                        │
+│  /analyze    /decode-qr    /analyze-page             │
+│  /check-page                                         │
+│  ┌────────────┐  ┌───────────────┐  ┌─────────────┐ │
+│  │ analyzer   │  │ ocr_analyzer  │  │page_checker │ │
+│  │ (XGBoost)  │  │ (pytesseract) │  │(BeautifulS.)│ │
+│  └────────────┘  └───────────────┘  └─────────────┘ │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Installation
+
+### Prerequisites
+
+| Tool | Version | Purpose |
+|---|---|---|
+| Python | 3.10+ | Backend runtime |
+| Node.js | 18+ | Extension build |
+| Tesseract OCR | 5.x | Page text extraction |
+| Chrome | Any | Extension host |
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/YOUR_USERNAME/linklens.git
+cd linklens
+```
+
+### 2. Install backend dependencies
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+**Install Tesseract OCR** (Windows):
+Download from [UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki) and add to PATH, or set in `ocr_analyzer.py`:
+```python
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+```
+
+**Install ZBar** (for QR decoding):
+```bash
+pip install pyzbar[zbar-wheel]
+```
+
+### 3. Train the model
+
+```bash
+cd ../ml
+python train.py           # local data only (~30 seconds)
+python train.py --live    # fetch live feeds (~2 minutes, recommended)
+```
+
+### 4. Start the backend
+
+```bash
+cd ../backend
+python main.py
+```
+
+Backend runs on `http://localhost:8000`. Visit it to confirm:
+```json
+{"status": "ok", "service": "LinkLens", "version": "1.5.0"}
+```
+
+### 5. Build and load the extension
+
+```bash
+cd ../extension
+npm install
+npm run build
+```
+
+1. Open Chrome → `chrome://extensions/`
+2. Enable **Developer mode** (top right)
+3. Click **Load unpacked** → select the `extension/dist/` folder
+4. The LinkLens icon appears in your toolbar
+
+### 6. Optional — Auto-start backend on Windows login
+
+Double-click `start_linklens_silent.vbs` to test, then create a shortcut to it in your Windows Startup folder:
+```
+Win + R → shell:startup → paste shortcut here
+```
 
 ---
 
@@ -11,141 +181,102 @@ LinkLens scans every URL you visit — or any URL you paste — and gives you a 
 ```
 linklens/
 ├── backend/
-│   ├── main.py              — FastAPI app, single endpoint: POST /analyze
-│   ├── analyzer.py          — Loads model, scores URLs, builds result
-│   ├── features.py          — 26 URL signals (no network, <1 ms)
+│   ├── main.py              # FastAPI app — all endpoints
+│   ├── analyzer.py          # ML model loader + combined scoring
+│   ├── features.py          # 27 URL feature extractors
+│   ├── ocr_analyzer.py      # Screenshot OCR + phrase matching
+│   ├── page_checker.py      # Live DOM structure analysis
 │   ├── requirements.txt
 │   └── models/
-│       └── phishing_model.joblib   — trained by ml/train.py
-│
+│       └── phishing_model.joblib
 ├── ml/
-│   ├── train.py             — trains the Random Forest, saves new model
-│   ├── evaluate.py          — sanity-checks model against known URLs
-│   ├── data_loader.py       — combines both CSV sources into one dataset
+│   ├── train.py             # XGBoost training pipeline
+│   ├── data_loader.py       # Multi-source data loader
+│   ├── evaluate.py          # 12-URL sanity check
 │   └── data/
-│       ├── phishing_site_urls.csv  — 1 662 labelled URLs (safe + phishing)
-│       └── online.csv              — 49 597 verified PhishTank URLs
-│
-└── extension/
-    ├── public/
-    │   ├── manifest.json    — Chrome MV3 manifest
-    │   ├── background.js    — service worker: auto-scan every tab, notifications
-    │   └── icon.svg
-    ├── src/
-    │   ├── Popup.jsx        — full UI: gauge, bars, history, offline fallback
-    │   └── main.jsx         — React entry point
-    ├── index.html
-    ├── package.json
-    └── vite.config.js
+│       ├── phishing_site_urls.csv
+│       └── online.csv
+├── extension/
+│   ├── public/
+│   │   ├── manifest.json
+│   │   ├── background.js    # Service worker
+│   │   ├── content.js       # Block page injector
+│   │   ├── qr_detector.js   # Auto QR scanner
+│   │   └── jsqr.min.js
+│   └── src/
+│       ├── Popup.jsx        # React popup UI
+│       └── main.jsx
+├── start_linklens.bat       # Manual backend start
+└── start_linklens_silent.vbs # Silent auto-start
 ```
 
 ---
 
-## Quick Start
+## Data Sources
 
-### 1 — Backend
-
-```bash
-cd backend
-pip install -r requirements.txt
-python main.py
-# API live at http://localhost:8000
-```
-
-### 2 — Extension
-
-```bash
-cd extension
-npm install
-npm run build
-```
-
-Open `chrome://extensions/` → enable **Developer Mode** → **Load unpacked** → select `extension/dist/`
-
-### 3 — Retrain (optional)
-
-Run this whenever you update `features.py` to rebuild the model:
-
-```bash
-cd ml
-python train.py      # trains + saves new model to backend/models/
-python evaluate.py   # sanity-checks 12 known URLs — should be 12/12
-```
-
-Then restart the backend so it loads the new model.
+| Source | Type | Size | URL |
+|---|---|---|---|
+| PhishTank `online.csv` | Phishing | 49,597 URLs | [phishtank.com](https://phishtank.com) |
+| `phishing_site_urls.csv` | Safe + Phishing | 1,662 URLs | Kaggle |
+| OpenPhish feed | Phishing (live) | ~300 URLs | [openphish.com](https://openphish.com/feed.txt) |
+| Majestic Million | Safe (live) | 10,000 domains | [majestic.com](https://downloads.majestic.com/majestic_million.csv) |
 
 ---
 
-## API
+## API Reference
 
 ### `POST /analyze`
-
-**Request**
 ```json
-{ "url": "https://paypal-secure-login.com" }
+{ "url": "https://example.com", "ocr_score": -1 }
 ```
+Returns: `score`, `verdict`, `confidence`, `highlights`, `bars`, `url_score`, `ocr_applied`
 
-**Response**
+### `POST /decode-qr`
 ```json
-{
-  "url":        "https://paypal-secure-login.com",
-  "score":      97,
-  "verdict":    "MALICIOUS",
-  "confidence": 0.971,
-  "highlights": [
-    "A brand name appears in the URL but not in the actual domain.",
-    "3 phishing-related keywords detected in URL."
-  ],
-  "bars": [
-    { "label": "URL Length",         "value": 44 },
-    { "label": "Special Characters", "value": 20 },
-    { "label": "Phish Keywords",     "value": 75 },
-    { "label": "URL Entropy",        "value": 61 },
-    { "label": "Brand Spoofing",     "value": 100 },
-    { "label": "ML Confidence",      "value": 97 }
-  ]
-}
+{ "image_base64": "..." }
 ```
+Returns: full analyze result + `qr_url`
 
-| Score  | Verdict      |
-|--------|--------------|
-| 0–29   | ✅ SAFE      |
-| 30–69  | ⚠️ SUSPICIOUS |
-| 70–100 | 🚨 MALICIOUS |
+### `POST /analyze-page`
+```json
+{ "url": "https://example.com", "image_base64": "..." }
+```
+Returns: `ocr_score`, `ocr_verdict`, `ocr_highlights`
+
+### `POST /check-page`
+```json
+{ "url": "https://example.com" }
+```
+Returns: `page_score`, `page_verdict`, `page_highlights`, `page_findings`
 
 ---
 
-## How the Model Works
+## Roadmap
 
-The backend extracts **26 numerical features** from the URL string alone — no DNS, no WHOIS, no page fetching. This keeps every scan under 50 ms.
-
-Feature groups:
-
-- **Trust signals** — known-safe domains, risky TLDs, raw IP usage, URL shorteners
-- **Structure** — URL/domain/path length, slash count, dot count
-- **Characters** — hyphens, `@`, `%`, `=`, digit ratio, letter ratio, entropy
-- **Keywords** — count of phishing words (login, verify, secure…)
-- **Brand spoofing** — brand name in URL but not in domain
-- **Homoglyph spoofing** — character substitution (`0→o`, `1→i`, `rn→m`, `vv→w`)
-
-The Random Forest was trained on ~3 300 labelled URLs (safe + phishing) and achieves **98.5% test accuracy** with only 2 missed phishing URLs out of 499 in the test set.
+- [x] XGBoost ML model (27 features, 97.4% accuracy)
+- [x] Live phishing data feeds (OpenPhish, PhishTank, Majestic)
+- [x] WHOIS domain age feature
+- [x] QR code scanner (upload + auto-detect on pages)
+- [x] OCR page content analysis
+- [x] Live DOM structure checker
+- [x] Block page on MALICIOUS sites
+- [x] Windows auto-start
+- [ ] SHAP explainability engine (in progress — [@Sudarshan](https://github.com/))
+- [ ] Docker one-command setup
+- [ ] Chrome Web Store publication
 
 ---
 
-## Test Results (evaluate.py)
+## Team
 
-```
-[PASS]   0  SAFE      https://www.google.com
-[PASS]   0  SAFE      https://nodejs.org/en/download
-[PASS]  76  MALICIOUS http://googIe.com          ← homoglyph
-[PASS]  80  MALICIOUS http://arnazon.com          ← rn→m typosquat
-[PASS]  96  MALICIOUS http://login.microsoft.com.secure.net
-[PASS]  97  MALICIOUS http://secure-paypal-verify.com
-12/12 passed
-```
+Built at **Hashcode 2025** by a 4-person team. Rebuilt and extended by:
+
+- **ML pipeline** — feature extraction, model training, data loading
+- **Backend API** — FastAPI endpoints, combined scoring logic
+- **Chrome Extension** — popup UI, service worker, content scripts
 
 ---
 
 ## License
 
-MIT
+[MIT](LICENSE) — free to use, modify, and distribute with attribution.

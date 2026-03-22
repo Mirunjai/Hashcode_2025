@@ -1,11 +1,12 @@
 """
-analyzer.py — LinkLens Core Analyzer v1.3
+analyzer.py — LinkLens Core Analyzer v1.4
 
-Changes from v1.2:
-  - combined_score() function merges URL + OCR scores intelligently
-  - /analyze endpoint now accepts optional ocr_score parameter
-  - OCR can boost a score upward or soften it slightly
-  - OCR can NEVER downgrade MALICIOUS → SAFE (attack-resistant)
+Changes:
+  - combined_score() now merges URL + OCR + DOM (3 layers)
+  - Each layer shown separately in response with own score/verdict
+  - WHOIS status reported explicitly (working / failed / unknown)
+  - analyze() accepts ocr_score and dom_score as optional params
+  - Final score computed from weighted combination of all available layers
 """
 
 from pathlib import Path
@@ -34,7 +35,7 @@ def load_model() -> bool:
         return False
 
 
-# ── Verdict helpers ───────────────────────────────────────────────────────────
+# ── Verdict ───────────────────────────────────────────────────────────────────
 
 def _verdict(score: int) -> str:
     if score < 30:  return "SAFE"
@@ -42,45 +43,60 @@ def _verdict(score: int) -> str:
     return "MALICIOUS"
 
 
-# ── Combined scoring ──────────────────────────────────────────────────────────
+# ── 4-layer combined scoring ──────────────────────────────────────────────────
 
-def combined_score(url_score: int, ocr_score: int) -> tuple[int, str]:
+def combined_score(
+    url_score: int,
+    ocr_score: int  = -1,
+    dom_score: int  = -1,
+) -> tuple[int, str]:
     """
-    Merge URL analysis score and OCR page-content score.
+    Merge URL ML score with OCR and DOM scores.
 
-    Rules (in priority order):
-      1. OCR finds phishing content (≥70) → take the higher of the two scores
-      2. OCR is suspicious (30-69)        → nudge URL score up by 10, cap at 100
-      3. URL is MALICIOUS, OCR is clean   → soften by up to 10 pts, floor at 70
-                                            (stays MALICIOUS — OCR cannot save it)
-      4. URL is SUSPICIOUS, OCR is clean  → soften by up to 5 pts
-      5. Both clean                       → URL score unchanged
+    Layer weights:
+      URL  — primary signal, 60% weight when all layers available
+      OCR  — page text,      25% weight
+      DOM  — page structure, 15% weight
 
-    Design intent:
-      - OCR is an amplifier, not an arbiter
-      - A well-crafted phishing page can fool OCR (images, CSS tricks, redirects)
-      - We never let a clean OCR override a MALICIOUS URL verdict to SAFE
+    Hard rules (override weighted average):
+      1. Any layer ≥ 70 (MALICIOUS) → final cannot be SAFE
+      2. MALICIOUS URL → floor at 70 regardless of other layers
+      3. OCR/DOM cannot downgrade MALICIOUS URL to SAFE
+      4. OCR/DOM CAN escalate a SAFE URL to SUSPICIOUS or MALICIOUS
     """
-    if ocr_score >= 70:
-        # OCR confirmed phishing content — escalate
-        final = max(url_score, ocr_score)
+    available = [(url_score, 0.60)]
+    if ocr_score >= 0:
+        available.append((ocr_score, 0.25))
+    if dom_score >= 0:
+        available.append((dom_score, 0.15))
 
-    elif 30 <= ocr_score < 70:
-        # OCR is suspicious — nudge the URL score up slightly
-        final = min(url_score + 10, 100)
+    # Renormalise weights if some layers missing
+    total_weight = sum(w for _, w in available)
+    weighted_avg = sum(s * (w / total_weight) for s, w in available)
+    final = int(weighted_avg)
 
-    elif ocr_score == 0 and url_score >= 70:
-        # URL malicious, OCR clean — soften a little but stay MALICIOUS
-        # Floor at 70 so it can never cross into SUSPICIOUS
-        final = max(url_score - 10, 70)
+    # Hard rule 1: if any layer is MALICIOUS, floor at 65 (at least SUSPICIOUS)
+    any_malicious = (
+        url_score >= 70 or
+        (ocr_score >= 0 and ocr_score >= 70) or
+        (dom_score >= 0 and dom_score >= 70)
+    )
+    if any_malicious:
+        final = max(final, 65)
 
-    elif ocr_score == 0 and 30 <= url_score < 70:
-        # URL suspicious, OCR clean — soften a little
-        final = max(url_score - 5, 30)
+    # Hard rule 2: MALICIOUS URL cannot go below 70
+    if url_score >= 70:
+        final = max(final, 70)
 
-    else:
-        # Both clean
-        final = url_score
+    # Hard rule 3: if ALL available secondary layers are clean (0),
+    # allow softening by up to 10 points — but never below 70 if URL is MALICIOUS
+    secondary_scores = [s for s, _ in available[1:]]
+    if secondary_scores and all(s == 0 for s in secondary_scores):
+        softened = url_score - 10
+        if url_score >= 70:
+            final = max(softened, 70)   # stays MALICIOUS
+        else:
+            final = max(softened, 30)   # stays at least SUSPICIOUS
 
     return final, _verdict(final)
 
@@ -142,17 +158,41 @@ def _param_bars(feat: dict, confidence: float) -> list[dict]:
     ]
 
 
+def _whois_status(feat: dict) -> dict:
+    """Return explicit WHOIS info for display in the scoreboard."""
+    age = feat.get("domain_age_days", -1)
+    if feat.get("is_trusted"):
+        return {"status": "trusted", "age_days": None,
+                "label": "Trusted domain — WHOIS skipped"}
+    if age == -1:
+        return {"status": "failed", "age_days": None,
+                "label": "WHOIS lookup failed or timed out"}
+    if age == 0:
+        return {"status": "new", "age_days": 0,
+                "label": "Registered today — extremely suspicious"}
+    if age < 30:
+        return {"status": "new", "age_days": age,
+                "label": f"Brand new domain — {age} days old"}
+    if age < 365:
+        return {"status": "recent", "age_days": age,
+                "label": f"Recently registered — {age} days old"}
+    years = age // 365
+    return {"status": "old", "age_days": age,
+            "label": f"Established domain — ~{years} year{'s' if years > 1 else ''} old"}
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def analyze(url: str, ocr_score: int = -1) -> dict:
+def analyze(url: str, ocr_score: int = -1, dom_score: int = -1) -> dict:
     """
-    Analyze a URL and optionally combine with an OCR score.
+    Full analysis pipeline. Accepts optional secondary layer scores.
 
     Args:
-        url       — the URL to analyze
-        ocr_score — page content OCR score (0-100), or -1 if not available
+        url       — URL to analyze
+        ocr_score — OCR page content score (0-100), or -1 if not run
+        dom_score — DOM structure check score (0-100), or -1 if not run
 
-    Returns a dict ready to serialize as JSON.
+    Returns full result dict with per-layer breakdown and combined score.
     """
     if _model is None:
         if not load_model():
@@ -161,16 +201,25 @@ def analyze(url: str, ocr_score: int = -1) -> dict:
     try:
         feat = extract(url)
 
-        # Trusted domains short-circuit — OCR doesn't change this
+        # Trusted domains — short circuit everything
         if feat.get("is_trusted"):
             return {
-                "url":        url,
-                "score":      0,
-                "verdict":    "SAFE",
-                "confidence": 0.0,
-                "highlights": ["No specific risk indicators found in URL structure."],
-                "bars":       _param_bars(feat, 0.0),
+                "url":          url,
+                "score":        0,
+                "url_score":    0,
+                "verdict":      "SAFE",
+                "confidence":   0.0,
+                "highlights":   ["Trusted domain — no analysis needed."],
+                "bars":         _param_bars(feat, 0.0),
+                "whois":        _whois_status(feat),
+                "layers": {
+                    "url":  {"score": 0,         "verdict": "SAFE",    "weight": "60%"},
+                    "ocr":  {"score": ocr_score,  "verdict": "UNKNOWN", "weight": "25%"},
+                    "dom":  {"score": dom_score,  "verdict": "UNKNOWN", "weight": "15%"},
+                    "whois":{"status": "trusted", "label": "Trusted domain"},
+                },
                 "ocr_applied": False,
+                "dom_applied": False,
             }
 
         # Run ML model
@@ -192,25 +241,47 @@ def analyze(url: str, ocr_score: int = -1) -> dict:
         if 0 <= age < 30:
             url_score = max(url_score, 75)
 
-        # Apply OCR combination if score provided
-        ocr_applied = False
-        if ocr_score >= 0:
-            final_score, verdict = combined_score(url_score, ocr_score)
-            ocr_applied = True
+        # Combined scoring with all available layers
+        ocr_applied = ocr_score >= 0
+        dom_applied = dom_score >= 0
+
+        if ocr_applied or dom_applied:
+            final_score, verdict = combined_score(url_score, ocr_score, dom_score)
         else:
             final_score = url_score
             verdict     = _verdict(url_score)
 
+        whois_info = _whois_status(feat)
+
         return {
             "url":          url,
             "score":        final_score,
-            "url_score":    url_score,           # raw URL-only score for transparency
-            "ocr_score":    ocr_score if ocr_score >= 0 else None,
+            "url_score":    url_score,
             "verdict":      verdict,
             "confidence":   round(prob, 3),
             "highlights":   _highlights(feat, verdict),
             "bars":         _param_bars(feat, prob),
+            "whois":        whois_info,
+            "layers": {
+                "url":  {
+                    "score":   url_score,
+                    "verdict": _verdict(url_score),
+                    "weight":  "60%",
+                },
+                "ocr":  {
+                    "score":   ocr_score if ocr_applied else None,
+                    "verdict": _verdict(ocr_score) if ocr_applied else "PENDING",
+                    "weight":  "25%",
+                },
+                "dom":  {
+                    "score":   dom_score if dom_applied else None,
+                    "verdict": _verdict(dom_score) if dom_applied else "PENDING",
+                    "weight":  "15%",
+                },
+                "whois": whois_info,
+            },
             "ocr_applied":  ocr_applied,
+            "dom_applied":  dom_applied,
         }
 
     except Exception as e:

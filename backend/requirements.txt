@@ -1,12 +1,25 @@
+# API
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
+
+# ML
 scikit-learn>=1.4.0
 xgboost>=2.0.0
 joblib>=1.3.0
 pandas>=2.2.0
 numpy>=1.26.0
+
+# WHOIS domain age
 python-whois>=0.9.4
-pytesseract>=0.3.10
-pillow>=10.2.0
+
+# QR decoding
 pyzbar>=0.1.9
+pillow>=10.0.0
+
+# OCR
+pytesseract>=0.3.10
+
+# Live page checker
+requests>=2.31.0
+beautifulsoup4>=4.12.0

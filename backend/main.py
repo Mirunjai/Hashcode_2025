@@ -1,10 +1,5 @@
 """
-main.py — LinkLens API v1.3
-Endpoints:
-  GET  /              — health check
-  POST /analyze       — URL analysis (optional ocr_score for combined scoring)
-  POST /decode-qr     — QR image decode + analyze
-  POST /analyze-page  — OCR screenshot analysis
+main.py — LinkLens API v1.4
 """
 
 import base64
@@ -18,6 +13,7 @@ from pydantic import BaseModel, HttpUrl
 
 from analyzer import analyze
 from ocr_analyzer import analyze_screenshot
+from page_checker import check_page
 
 
 @asynccontextmanager
@@ -27,7 +23,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="LinkLens API", version="1.3.0", lifespan=lifespan)
+app = FastAPI(title="LinkLens API", version="1.4.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,11 +33,10 @@ app.add_middleware(
 )
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
 class ScanRequest(BaseModel):
     url:       HttpUrl
-    ocr_score: Optional[int] = -1   # pass OCR score to get combined result
+    ocr_score: Optional[int] = -1
+    dom_score: Optional[int] = -1   # NEW: DOM structure score
 
 class QRRequest(BaseModel):
     image_base64: str
@@ -50,17 +45,22 @@ class PageRequest(BaseModel):
     url:          str
     image_base64: str
 
+class CheckPageRequest(BaseModel):
+    url: str
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "LinkLens", "version": "1.3.0"}
+    return {"status": "ok", "service": "LinkLens", "version": "1.4.0"}
 
 
 @app.post("/analyze")
 def analyze_url(req: ScanRequest):
-    return analyze(str(req.url), ocr_score=req.ocr_score or -1)
+    return analyze(
+        str(req.url),
+        ocr_score=req.ocr_score or -1,
+        dom_score=req.dom_score or -1,
+    )
 
 
 @app.post("/decode-qr")
@@ -90,14 +90,14 @@ def decode_qr(req: QRRequest):
 
 @app.post("/analyze-page")
 def analyze_page(req: PageRequest):
-    """
-    Run OCR on a webpage screenshot.
-    The extension calls this after the URL scan, then can re-call
-    /analyze passing the returned ocr_score to get a combined verdict.
-    """
     result        = analyze_screenshot(req.image_base64)
     result["url"] = req.url
     return result
+
+
+@app.post("/check-page")
+def check_page_endpoint(req: CheckPageRequest):
+    return check_page(req.url)
 
 
 if __name__ == "__main__":
