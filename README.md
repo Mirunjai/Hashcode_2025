@@ -261,7 +261,7 @@ Returns: `page_score`, `page_verdict`, `page_highlights`, `page_findings`
 - [x] Live DOM structure checker
 - [x] Block page on MALICIOUS sites
 - [x] Windows auto-start
-- [ ] SHAP explainability engine (in progress — [[@Sudarshan]](https://github.com/SudarshanG9))
+- [ ] SHAP explainability engine (in progress — [@Sudarshan](https://github.com/SudarshanG9))
 - [ ] Docker one-command setup
 - [ ] Chrome Web Store publication
 
