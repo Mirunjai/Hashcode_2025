@@ -147,15 +147,19 @@
 
     // Go back button
     document.getElementById("ll-go-back").addEventListener("click", () => {
-      history.back();
-      // If there's no history, close the tab
-      setTimeout(() => window.close(), 300);
+      if (history.length > 1) {
+        history.back();
+      } else {
+        // No history — redirect to Chrome's new tab page
+        window.location.href = "chrome://newtab";
+      }
     });
 
     // Proceed button — remove overlay and remember choice
     document.getElementById("ll-proceed").addEventListener("click", () => {
       proceeded.add(url);
-      overlay.remove();
+      const el = document.getElementById("linklens-block-overlay");
+      if (el) el.remove();
       document.documentElement.style.overflow = "";
     });
   }
